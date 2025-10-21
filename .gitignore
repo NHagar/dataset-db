@@ -9,4 +9,27 @@ wheels/
 # Virtual environments
 .venv
 
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
+
+# Environment
+.env
+
+# Data and cache
+data/
+*.parquet
+*.mphf
+*.roar
+*.zst
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
