@@ -139,7 +139,9 @@ class TestParquetWriterWrite:
         result = writer.write_batch(df)
 
         assert result["files_written"] == 0
-        assert result["rows_written"] == 0
+        assert result["total_rows_processed"] == 0
+        assert result["rows_buffered"] == 0
+        assert result["rows_flushed"] == 0
 
     def test_write_single_partition(self, writer, sample_normalized_df):
         """Test writing data to single partition."""
@@ -151,7 +153,8 @@ class TestParquetWriterWrite:
         result = writer.write_batch(df)
 
         assert result["files_written"] == 1
-        assert result["rows_written"] == 2
+        assert result["rows_flushed"] == 2
+        assert result["total_rows_processed"] == 2
 
         # Verify file exists
         parquet_path = writer.layout.get_parquet_path(1, "3a", 0)
@@ -163,7 +166,8 @@ class TestParquetWriterWrite:
 
         # Should create 2 files (2 different domain_prefixes)
         assert result["files_written"] == 2
-        assert result["rows_written"] == 4
+        assert result["rows_flushed"] == 4
+        assert result["total_rows_processed"] == 4
 
         # Verify both partition files exist
         path_3a = writer.layout.get_parquet_path(1, "3a", 0)
@@ -222,7 +226,8 @@ class TestParquetWriterWrite:
         result = writer.write_batch(df, dataset_id=1)
 
         # Should only write 2 rows (dataset_id=1)
-        assert result["rows_written"] == 2
+        assert result["rows_flushed"] == 2
+        assert result["total_rows_processed"] == 2
 
 
 class TestParquetWriterRead:
@@ -499,4 +504,5 @@ class TestParquetWriterIntegration:
 
         # Should create 16 files (one per domain prefix)
         assert result["files_written"] == 16
-        assert result["rows_written"] == 160
+        assert result["rows_flushed"] == 160
+        assert result["total_rows_processed"] == 160

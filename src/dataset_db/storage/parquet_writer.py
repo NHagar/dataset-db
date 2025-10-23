@@ -112,7 +112,11 @@ class ParquetWriter:
             auto_flush: Automatically flush full buffers (default True)
 
         Returns:
-            Dictionary with write statistics (only includes flushed data)
+            Dictionary with write statistics:
+            - rows_buffered: Rows added to buffer (not yet written to disk)
+            - rows_flushed: Rows flushed to disk during this call
+            - files_written: Number of files created during this call
+            - total_rows_processed: Total rows processed in this batch
 
         Raises:
             ValueError: If DataFrame has incorrect schema
@@ -121,11 +125,18 @@ class ParquetWriter:
         self._validate_schema(df)
 
         if df.height == 0:
-            return {"files_written": 0, "rows_written": 0}
+            return {
+                "rows_buffered": 0,
+                "rows_flushed": 0,
+                "files_written": 0,
+                "total_rows_processed": 0,
+            }
 
         # Filter by dataset_id if specified
         if dataset_id is not None:
             df = df.filter(pl.col("dataset_id") == dataset_id)
+
+        total_rows_processed = df.height
 
         # Group by partition keys (dataset_id, domain_prefix)
         partitions = df.partition_by(
@@ -133,7 +144,8 @@ class ParquetWriter:
         )
 
         files_written = 0
-        rows_written = 0
+        rows_flushed = 0
+        rows_buffered = 0
 
         for partition_df in partitions:
             # Extract partition values from first row
@@ -171,14 +183,19 @@ class ParquetWriter:
             ):
                 flush_result = self._flush_partition(ds_id, domain_prefix)
                 files_written += flush_result["files_written"]
-                rows_written += flush_result["rows_written"]
+                rows_flushed += flush_result["rows_written"]
+            else:
+                # Rows were buffered, not flushed
+                rows_buffered += write_df.height
 
         # Update stats
         self._stats["batches_written"] += 1
 
         return {
+            "rows_buffered": rows_buffered,
+            "rows_flushed": rows_flushed,
             "files_written": files_written,
-            "rows_written": rows_written,
+            "total_rows_processed": total_rows_processed,
         }
 
     def flush(self, dataset_id: Optional[int] = None, domain_prefix: Optional[str] = None) -> dict[str, int]:
@@ -450,6 +467,41 @@ class ParquetWriter:
             Dictionary with statistics about writes performed
         """
         return {**self._stats}
+
+    def get_buffer_stats(self) -> dict:
+        """
+        Get statistics about currently buffered data.
+
+        Returns:
+            Dictionary with buffer statistics:
+            - total_partitions_buffered: Number of partitions with buffered data
+            - total_rows_buffered: Estimated total rows in buffers
+            - total_bytes_buffered: Estimated total bytes in buffers
+            - partitions: List of buffered partition details
+        """
+        total_rows = 0
+        partition_details = []
+
+        for (dataset_id, domain_prefix), dfs in self._partition_buffers.items():
+            rows = sum(df.height for df in dfs)
+            bytes_buffered = self._partition_buffer_sizes.get(
+                (dataset_id, domain_prefix), 0
+            )
+            total_rows += rows
+
+            partition_details.append({
+                "dataset_id": dataset_id,
+                "domain_prefix": domain_prefix,
+                "rows": rows,
+                "bytes": bytes_buffered,
+            })
+
+        return {
+            "total_partitions_buffered": len(self._partition_buffers),
+            "total_rows_buffered": total_rows,
+            "total_bytes_buffered": sum(self._partition_buffer_sizes.values()),
+            "partitions": partition_details,
+        }
 
     def get_storage_stats(self) -> dict:
         """

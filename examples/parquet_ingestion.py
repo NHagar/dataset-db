@@ -60,8 +60,9 @@ def example_basic_write():
     # Flush any remaining buffered data
     flush_result = writer.flush()
 
-    print(f"\nWrite result: {result}")
-    print(f"Flush result: {flush_result}")
+    print(f"\nBatch result: processed={result['total_rows_processed']}, "
+          f"buffered={result['rows_buffered']}, flushed={result['rows_flushed']}")
+    print(f"Flush result: {flush_result['rows_written']} rows written")
     print(f"Writer stats: {writer.get_stats()}")
     print(f"Storage stats: {writer.get_storage_stats()}")
 
@@ -116,10 +117,12 @@ def example_multiple_datasets():
         # Write
         result = writer.write_batch(normalized_df)
 
-        total_rows += result["rows_written"]
+        total_rows += result["total_rows_processed"]
         total_files += result["files_written"]
 
-        print(f"Wrote {result['rows_written']} rows to {result['files_written']} files")
+        print(f"Processed {result['total_rows_processed']} rows: "
+              f"buffered={result['rows_buffered']}, flushed={result['rows_flushed']} "
+              f"({result['files_written']} files)")
 
     # Flush any remaining buffered data
     flush_result = writer.flush()
@@ -275,11 +278,12 @@ def main():
                 result = writer.write_batch(normalized_df)
 
                 batch_count += 1
-                total_rows += result["rows_written"]
+                total_rows += result["total_rows_processed"]
 
                 print(
-                    f"Batch {batch_count}: wrote {result['rows_written']} rows "
-                    f"to {result['files_written']} files"
+                    f"Batch {batch_count}: processed {result['total_rows_processed']} rows | "
+                    f"buffered: {result['rows_buffered']}, flushed: {result['rows_flushed']} "
+                    f"({result['files_written']} files)"
                 )
 
             # Flush any remaining buffered data
