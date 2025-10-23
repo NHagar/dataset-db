@@ -25,6 +25,7 @@ def writer(temp_storage):
         base_path=temp_storage,
         compression="zstd",
         compression_level=6,
+        partition_buffer_size=0,  # Disable buffering for tests (immediate writes)
     )
 
 

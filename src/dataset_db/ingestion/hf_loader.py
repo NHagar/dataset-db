@@ -10,6 +10,8 @@ from typing import Iterator, Optional
 import polars as pl
 from datasets import load_dataset
 
+from dataset_db.config import get_config
+
 
 class HuggingFaceLoader:
     """
@@ -20,16 +22,24 @@ class HuggingFaceLoader:
     - domain: string (top-level domain)
     """
 
-    def __init__(self, username: str = "nhagar", suffix: str = "_urls"):
+    def __init__(
+        self,
+        username: str = "nhagar",
+        suffix: str = "_urls",
+        batch_size: Optional[int] = None,
+    ):
         """
         Initialize HuggingFace loader.
 
         Args:
             username: HuggingFace username (default: 'nhagar')
             suffix: Dataset name suffix (default: '_urls')
+            batch_size: Batch size for streaming (default: from config, 1M rows)
         """
         self.username = username
         self.suffix = suffix
+        self.config = get_config()
+        self.batch_size = batch_size or self.config.ingestion.batch_size
 
     def load(
         self,
@@ -64,7 +74,7 @@ class HuggingFaceLoader:
 
             if streaming:
                 # Yield batches from streaming dataset
-                yield from self._stream_batches(dataset)
+                yield from self._stream_batches(dataset, batch_size=self.batch_size)
             else:
                 # Convert entire dataset to Polars DataFrame
                 df = pl.from_arrow(dataset.data.table)
@@ -74,7 +84,7 @@ class HuggingFaceLoader:
             raise ValueError(f"Failed to load dataset '{full_name}': {e}")
 
     def _stream_batches(
-        self, dataset, batch_size: int = 10000
+        self, dataset, batch_size: int
     ) -> Iterator[pl.DataFrame]:
         """
         Stream batches from HuggingFace dataset.

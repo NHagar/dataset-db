@@ -33,15 +33,17 @@ def example_basic_write():
     writer = ParquetWriter(base_path=Path("./data"))
 
     # Sample URLs
-    sample_data = pl.DataFrame({
-        "url": [
-            "https://example.com/path1?a=1",
-            "https://example.com/path2?b=2",
-            "https://another.org/test",
-            "https://subdomain.example.com/page",
-            "http://Example.COM/Path",  # Will normalize to lowercase
-        ]
-    })
+    sample_data = pl.DataFrame(
+        {
+            "url": [
+                "https://example.com/path1?a=1",
+                "https://example.com/path2?b=2",
+                "https://another.org/test",
+                "https://subdomain.example.com/page",
+                "http://Example.COM/Path",  # Will normalize to lowercase
+            ]
+        }
+    )
 
     print(f"\nInput: {len(sample_data)} URLs")
     print(sample_data)
@@ -55,7 +57,11 @@ def example_basic_write():
     # Write to Parquet
     result = writer.write_batch(normalized_df)
 
+    # Flush any remaining buffered data
+    flush_result = writer.flush()
+
     print(f"\nWrite result: {result}")
+    print(f"Flush result: {flush_result}")
     print(f"Writer stats: {writer.get_stats()}")
     print(f"Storage stats: {writer.get_storage_stats()}")
 
@@ -115,9 +121,13 @@ def example_multiple_datasets():
 
         print(f"Wrote {result['rows_written']} rows to {result['files_written']} files")
 
+    # Flush any remaining buffered data
+    flush_result = writer.flush()
+    print(f"\nFinal flush: {flush_result['rows_written']} rows to {flush_result['files_written']} files")
+
     print("\n--- Summary ---")
-    print(f"Total rows written: {total_rows}")
-    print(f"Total files created: {total_files}")
+    print(f"Total rows written: {total_rows + flush_result['rows_written']}")
+    print(f"Total files created: {total_files + flush_result['files_written']}")
     print("\nStorage stats:")
 
     storage_stats = writer.get_storage_stats()
@@ -127,7 +137,9 @@ def example_multiple_datasets():
 
     print("\nDatasets:")
     for ds in storage_stats["datasets"]:
-        print(f"  Dataset {ds['dataset_id']}: {ds['partitions']} partitions, {ds['files']} files")
+        print(
+            f"  Dataset {ds['dataset_id']}: {ds['partitions']} partitions, {ds['files']} files"
+        )
 
 
 def example_read_back():
@@ -238,9 +250,7 @@ def main():
     """Run all examples."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Parquet ingestion examples"
-    )
+    parser = argparse.ArgumentParser(description="Parquet ingestion examples")
     parser.add_argument(
         "--with-hf",
         metavar="DATASET",
@@ -261,9 +271,7 @@ def main():
             total_rows = 0
 
             for batch_df in loader.load(args.with_hf, streaming=True):
-                normalized_df = processor.process_batch(
-                    batch_df, args.with_hf
-                )
+                normalized_df = processor.process_batch(batch_df, args.with_hf)
                 result = writer.write_batch(normalized_df)
 
                 batch_count += 1
@@ -274,10 +282,9 @@ def main():
                     f"to {result['files_written']} files"
                 )
 
-                # Limit for demo
-                if batch_count >= 5:
-                    print("\nLimited to 5 batches for demo.")
-                    break
+            # Flush any remaining buffered data
+            flush_result = writer.flush()
+            total_rows += flush_result["rows_written"]
 
             print(f"\nTotal: {total_rows} rows in {batch_count} batches")
             print(f"Storage stats: {writer.get_storage_stats()}")

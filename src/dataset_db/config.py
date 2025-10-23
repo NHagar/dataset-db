@@ -19,7 +19,10 @@ class IngestionConfig(BaseSettings):
     )
 
     # Processing settings
-    batch_size: int = Field(default=10000, description="Batch size for processing")
+    batch_size: int = Field(
+        default=1_000_000,
+        description="Batch size for streaming from HuggingFace (rows per batch)",
+    )
     max_workers: int = Field(
         default=4, description="Number of parallel workers for processing"
     )
@@ -28,6 +31,10 @@ class IngestionConfig(BaseSettings):
     row_group_size: int = Field(
         default=128 * 1024 * 1024,  # 128MB
         description="Target row group size in bytes",
+    )
+    partition_buffer_size: int = Field(
+        default=128 * 1024 * 1024,  # 128MB
+        description="Buffer size per partition before flushing to disk",
     )
     compression: str = Field(default="zstd", description="Compression codec")
     compression_level: int = Field(

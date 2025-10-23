@@ -5,6 +5,7 @@ Implements spec.md §2.1 Parquet storage with:
 - Partitioning by dataset_id and domain_prefix
 - ZSTD compression with dictionary encoding
 - Row group size management
+- Partition-level buffering for efficient writes at scale
 - Batch writing with automatic partition handling
 """
 
@@ -28,6 +29,7 @@ class ParquetWriter:
     - ZSTD compression (level 6-9)
     - Dictionary encoding for scheme, host, path_query, domain
     - Target row group size: 128MB (configurable)
+    - Partition-level buffering for efficient writes at scale
     """
 
     def __init__(
@@ -36,6 +38,7 @@ class ParquetWriter:
         compression: Optional[str] = None,
         compression_level: Optional[int] = None,
         row_group_size: Optional[int] = None,
+        partition_buffer_size: Optional[int] = None,
     ):
         """
         Initialize Parquet writer.
@@ -45,6 +48,7 @@ class ParquetWriter:
             compression: Compression codec (defaults to config, typically 'zstd')
             compression_level: Compression level (defaults to config, typically 6)
             row_group_size: Target row group size in bytes (defaults to 128MB)
+            partition_buffer_size: Buffer size per partition before flushing (defaults to 128MB)
         """
         self.config = get_config()
 
@@ -59,9 +63,18 @@ class ParquetWriter:
         self.row_group_size = (
             row_group_size or self.config.ingestion.row_group_size
         )
+        self.partition_buffer_size = (
+            partition_buffer_size
+            if partition_buffer_size is not None
+            else self.config.ingestion.partition_buffer_size
+        )
 
         # Initialize storage layout manager
         self.layout = StorageLayout(self.base_path)
+
+        # Partition buffers: {(dataset_id, domain_prefix): [DataFrames]}
+        self._partition_buffers: dict[tuple[int, str], list[pl.DataFrame]] = {}
+        self._partition_buffer_sizes: dict[tuple[int, str], int] = {}
 
         # Statistics tracking
         self._stats = {
@@ -75,6 +88,7 @@ class ParquetWriter:
         self,
         df: pl.DataFrame,
         dataset_id: Optional[int] = None,
+        auto_flush: bool = True,
     ) -> dict[str, int]:
         """
         Write a batch of normalized URLs to partitioned Parquet files.
@@ -89,14 +103,16 @@ class ParquetWriter:
         - domain: String
         - domain_prefix: String
 
-        Data is automatically partitioned by dataset_id and domain_prefix.
+        Data is buffered per partition and flushed when buffer size exceeds
+        partition_buffer_size (default 128MB) or when auto_flush is True.
 
         Args:
             df: Normalized Polars DataFrame from IngestionProcessor
             dataset_id: Optional dataset ID filter (if df contains multiple datasets)
+            auto_flush: Automatically flush full buffers (default True)
 
         Returns:
-            Dictionary with write statistics
+            Dictionary with write statistics (only includes flushed data)
 
         Raises:
             ValueError: If DataFrame has incorrect schema
@@ -125,7 +141,7 @@ class ParquetWriter:
             ds_id = first_row["dataset_id"]
             domain_prefix = first_row["domain_prefix"]
 
-            # Remove partition columns before writing (they're in the directory path)
+            # Remove partition columns before buffering (they're in the directory path)
             write_df = partition_df.select([
                 "domain_id",
                 "url_id",
@@ -135,16 +151,111 @@ class ParquetWriter:
                 "domain",
             ])
 
-            # Write partition to Parquet
-            files_created = self._write_partition(
-                write_df, ds_id, domain_prefix
-            )
+            # Add to partition buffer
+            partition_key = (ds_id, domain_prefix)
+            if partition_key not in self._partition_buffers:
+                self._partition_buffers[partition_key] = []
+                self._partition_buffer_sizes[partition_key] = 0
 
-            files_written += files_created
-            rows_written += write_df.height
+            self._partition_buffers[partition_key].append(write_df)
+
+            # Estimate buffer size (approximate uncompressed bytes)
+            buffer_size = write_df.to_arrow().nbytes
+            self._partition_buffer_sizes[partition_key] += buffer_size
+
+            # Flush if buffer exceeds threshold and auto_flush is enabled
+            # partition_buffer_size=0 means immediate writes (no buffering)
+            if auto_flush and (
+                self.partition_buffer_size == 0
+                or self._partition_buffer_sizes[partition_key] >= self.partition_buffer_size
+            ):
+                flush_result = self._flush_partition(ds_id, domain_prefix)
+                files_written += flush_result["files_written"]
+                rows_written += flush_result["rows_written"]
 
         # Update stats
         self._stats["batches_written"] += 1
+
+        return {
+            "files_written": files_written,
+            "rows_written": rows_written,
+        }
+
+    def flush(self, dataset_id: Optional[int] = None, domain_prefix: Optional[str] = None) -> dict[str, int]:
+        """
+        Flush buffered data to disk.
+
+        Args:
+            dataset_id: Optional dataset ID to flush (if None, flush all)
+            domain_prefix: Optional domain prefix to flush (requires dataset_id)
+
+        Returns:
+            Dictionary with write statistics
+        """
+        files_written = 0
+        rows_written = 0
+
+        if dataset_id is not None and domain_prefix is not None:
+            # Flush specific partition
+            result = self._flush_partition(dataset_id, domain_prefix)
+            files_written += result["files_written"]
+            rows_written += result["rows_written"]
+        elif dataset_id is not None:
+            # Flush all partitions for a dataset
+            keys_to_flush = [
+                key for key in self._partition_buffers.keys()
+                if key[0] == dataset_id
+            ]
+            for ds_id, dp in keys_to_flush:
+                result = self._flush_partition(ds_id, dp)
+                files_written += result["files_written"]
+                rows_written += result["rows_written"]
+        else:
+            # Flush all partitions
+            keys_to_flush = list(self._partition_buffers.keys())
+            for ds_id, dp in keys_to_flush:
+                result = self._flush_partition(ds_id, dp)
+                files_written += result["files_written"]
+                rows_written += result["rows_written"]
+
+        return {
+            "files_written": files_written,
+            "rows_written": rows_written,
+        }
+
+    def _flush_partition(
+        self,
+        dataset_id: int,
+        domain_prefix: str,
+    ) -> dict[str, int]:
+        """
+        Flush a specific partition buffer to disk.
+
+        Args:
+            dataset_id: Dataset identifier
+            domain_prefix: Domain prefix for partitioning
+
+        Returns:
+            Dictionary with write statistics
+        """
+        partition_key = (dataset_id, domain_prefix)
+
+        if partition_key not in self._partition_buffers or not self._partition_buffers[partition_key]:
+            return {"files_written": 0, "rows_written": 0}
+
+        # Concatenate all buffered DataFrames for this partition
+        buffered_dfs = self._partition_buffers[partition_key]
+        combined_df = pl.concat(buffered_dfs)
+
+        # Write to disk
+        files_written = self._write_partition(combined_df, dataset_id, domain_prefix)
+        rows_written = combined_df.height
+
+        # Clear buffer
+        del self._partition_buffers[partition_key]
+        del self._partition_buffer_sizes[partition_key]
+
+        # Update stats
         self._stats["rows_written"] += rows_written
         self._stats["files_created"] += files_written
 

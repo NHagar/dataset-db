@@ -406,19 +406,59 @@ STRUCTURE.md
 IMPLEMENTATION.md (this file)
 ```
 
+## Recent Performance Optimizations (2025-10-23)
+
+### Batch Size & Buffering Improvements
+
+**Problem:** Original implementation used small batches (10k rows) and wrote immediately to disk, creating excessive file fragmentation for billion-row datasets.
+
+**Solution Implemented:**
+
+1. **Increased batch size** from 10k to 1M rows (configurable via `INGEST__BATCH_SIZE`)
+   - Matches target row group size (~128MB)
+   - Reduces overhead from streaming HuggingFace datasets
+
+2. **Partition-level buffering** in ParquetWriter
+   - Buffers data per partition until reaching `partition_buffer_size` (default: 128MB)
+   - Reduces file fragmentation: instead of 1 file per 10k-row batch per partition, now 1 file per 128MB per partition
+   - For 1B row dataset: ~7,800 files instead of ~25.6M files (3,000x reduction)
+
+3. **Explicit flush control**
+   - `writer.flush()` - flush all buffered data
+   - `writer.flush(dataset_id=1)` - flush specific dataset
+   - `writer.flush(dataset_id=1, domain_prefix='3a')` - flush specific partition
+   - Tests use `partition_buffer_size=0` for immediate writes
+
+4. **Updated examples** to call `writer.flush()` after processing
+
+**Impact:**
+- **File count:** 3,000x reduction for large datasets
+- **Write efficiency:** Larger row groups enable better compression and query performance
+- **Memory usage:** Bounded by buffer size (default 128MB per partition)
+- **Backward compatibility:** All 95 tests pass
+
+**Configuration:**
+```python
+# .env or environment variables
+INGEST__BATCH_SIZE=1000000              # 1M rows per batch from HuggingFace
+INGEST__PARTITION_BUFFER_SIZE=134217728 # 128MB buffer per partition
+```
+
 ## Conclusion
 
 **Milestones 1 & 2 are complete and production-ready.**
 
 The system can now:
-1. ✅ Load datasets from HuggingFace
+1. ✅ Load datasets from HuggingFace with configurable batch sizes
 2. ✅ Normalize URLs with full canonicalization
 3. ✅ Generate consistent IDs (dataset, domain, URL)
-4. ✅ Write to partitioned Parquet storage with optimal compression
+4. ✅ Write to partitioned Parquet storage with optimal compression and buffering
 5. ✅ Read data back for verification and querying
+6. ✅ Handle billion-row datasets efficiently with partition-level buffering
 
 **Test Coverage:** 95 unit tests, all passing
 **Code Quality:** All linting checks pass, comprehensive documentation
-**Performance:** Dictionary encoding + ZSTD compression for optimal storage
+**Performance:** Dictionary encoding + ZSTD compression + partition buffering for optimal storage
+**Scalability:** Optimized for datasets with millions to billions of rows
 
 **Ready for:** Milestone 3 - Building indexes (domain dictionary, MPHF, Roaring bitmaps, postings)
