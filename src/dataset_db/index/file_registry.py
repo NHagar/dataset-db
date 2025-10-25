@@ -5,6 +5,7 @@ As described in spec.md §2.2C, this is a simple TSV mapping:
 file_id \t dataset_id \t domain_prefix \t parquet_rel_path
 """
 
+import io
 import logging
 from pathlib import Path
 
@@ -104,8 +105,10 @@ class FileRegistry:
         # Convert to DataFrame
         df = pl.DataFrame(self.files)
 
-        # Write to TSV
-        tsv_bytes = df.write_csv(separator="\t").encode("utf-8")
+        # Write to TSV via StringIO buffer
+        buffer = io.StringIO()
+        df.write_csv(file=buffer, separator="\t")
+        tsv_bytes = buffer.getvalue().encode("utf-8")
 
         # Compress
         compressor = zstd.ZstdCompressor(level=compression_level)
