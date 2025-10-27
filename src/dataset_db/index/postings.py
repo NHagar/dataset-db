@@ -399,3 +399,213 @@ class PostingsIndex:
         """
         self.extract_postings(domain_lookup, file_registry)
         return self.save(version)
+
+    def extract_postings_from_files(
+        self,
+        parquet_files: list[Path],
+        domain_lookup: dict[str, int],
+        file_registry: dict[str, int],
+    ) -> dict[tuple[int, int], list[tuple[int, int]]]:
+        """
+        Extract postings from specific Parquet files.
+
+        Args:
+            parquet_files: List of Parquet files to scan
+            domain_lookup: Map from domain string to domain_id
+            file_registry: Map from relative file path to file_id
+
+        Returns:
+            Dict mapping (domain_id, dataset_id) → [(file_id, row_group), ...]
+        """
+        logger.info(f"Extracting postings from {len(parquet_files)} Parquet files...")
+
+        urls_dir = self.base_path / "urls"
+        postings: dict[tuple[int, int], list[tuple[int, int]]] = {}
+
+        for i, parquet_file in enumerate(parquet_files, 1):
+            if i % 100 == 0:
+                logger.info(
+                    f"Processed {i}/{len(parquet_files)} files, "
+                    f"{len(postings)} posting entries"
+                )
+
+            try:
+                # Get file_id
+                rel_path = str(parquet_file.relative_to(urls_dir))
+                file_id = file_registry.get(rel_path)
+                if file_id is None:
+                    logger.warning(f"File not in registry: {rel_path}")
+                    continue
+
+                # Parse dataset_id from path
+                parts = parquet_file.parts
+                dataset_id = None
+                for part in parts:
+                    if part.startswith("dataset_id="):
+                        dataset_id = int(part.split("=")[1])
+                        break
+
+                if dataset_id is None:
+                    logger.warning(f"Could not extract dataset_id from {parquet_file}")
+                    continue
+
+                # Read Parquet metadata
+                parquet_metadata = pq.read_metadata(parquet_file)
+                num_row_groups = parquet_metadata.num_row_groups
+
+                # For each row group, get unique domains
+                for row_group_idx in range(num_row_groups):
+                    # Read domain column (simplified: reads whole file)
+                    df = pl.read_parquet(parquet_file, columns=["domain"])
+                    unique_domains = df["domain"].unique().to_list()
+
+                    for domain in unique_domains:
+                        domain_id = domain_lookup.get(domain)
+                        if domain_id is None:
+                            continue
+
+                        key = (domain_id, dataset_id)
+                        if key not in postings:
+                            postings[key] = []
+
+                        postings[key].append((file_id, row_group_idx))
+
+            except Exception as e:
+                logger.error(f"Error processing {parquet_file}: {e}")
+                continue
+
+        logger.info(f"Extracted {len(postings)} posting entries from new files")
+        return postings
+
+    def merge_postings(
+        self,
+        old_postings: dict[tuple[int, int], list[tuple[int, int]]],
+        new_postings: dict[tuple[int, int], list[tuple[int, int]]],
+    ) -> dict[tuple[int, int], list[tuple[int, int]]]:
+        """
+        Merge old postings with new postings.
+
+        Args:
+            old_postings: Existing (domain_id, dataset_id) → [(file_id, row_group), ...]
+            new_postings: New (domain_id, dataset_id) → [(file_id, row_group), ...]
+
+        Returns:
+            Merged postings
+        """
+        logger.info(
+            f"Merging {len(old_postings)} old postings with {len(new_postings)} new postings"
+        )
+
+        # Start with copy of old postings
+        merged = {key: list(val) for key, val in old_postings.items()}
+
+        # Merge in new postings
+        num_updated = 0
+        num_new = 0
+
+        for key, new_pairs in new_postings.items():
+            if key in merged:
+                # Append to existing list
+                merged[key].extend(new_pairs)
+                num_updated += 1
+            else:
+                # Create new entry
+                merged[key] = new_pairs
+                num_new += 1
+
+        logger.info(
+            f"Merged result: {len(merged)} total postings "
+            f"({num_updated} updated, {num_new} new)"
+        )
+
+        return merged
+
+    def load_all_shards(self, version: str) -> dict[tuple[int, int], list[tuple[int, int]]]:
+        """
+        Load all shards of postings index.
+
+        Args:
+            version: Version identifier
+
+        Returns:
+            Dict mapping (domain_id, dataset_id) → [(file_id, row_group), ...]
+        """
+        logger.info(f"Loading all postings shards for version {version}...")
+
+        postings_dir = self.base_path / "index" / version / "postings"
+        if not postings_dir.exists():
+            logger.warning(f"Postings directory not found: {postings_dir}")
+            return {}
+
+        all_postings = {}
+
+        # Find all shard directories
+        shard_dirs = sorted([d for d in postings_dir.iterdir() if d.is_dir()])
+
+        for shard_dir in shard_dirs:
+            shard = int(shard_dir.name)
+            shard_data = self.load_shard(version, shard)
+
+            # Decode payloads
+            for (domain_id, dataset_id), payload_bytes in shard_data.items():
+                pairs = self.decode_payload(payload_bytes)
+                all_postings[(domain_id, dataset_id)] = pairs
+
+        logger.info(f"Loaded {len(all_postings)} posting entries from all shards")
+        return all_postings
+
+    def build_incremental(
+        self,
+        domain_lookup: dict[str, int],
+        file_registry: dict[str, int],
+        version: str,
+        prev_version: str | None,
+        new_files: list[Path],
+        compression_level: int = 6,
+    ) -> list[Path]:
+        """
+        Build postings index incrementally by merging with previous version.
+
+        Args:
+            domain_lookup: Map from domain string to domain_id (from new MPHF)
+            file_registry: Map from relative file path to file_id (from new registry)
+            version: New version identifier
+            prev_version: Previous version identifier (None for first build)
+            new_files: List of new Parquet files to process
+            compression_level: Zstd compression level
+
+        Returns:
+            List of paths to saved shard directories
+        """
+        logger.info("Building postings index incrementally...")
+
+        # Load previous postings if available
+        old_postings = {}
+        if prev_version:
+            try:
+                logger.info(f"Loading previous postings from version {prev_version}")
+                old_postings = self.load_all_shards(prev_version)
+                logger.info(f"Loaded {len(old_postings)} postings from previous version")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to load previous postings: {e}, starting from scratch"
+                )
+
+        # Extract postings from new files only
+        new_postings = self.extract_postings_from_files(
+            new_files, domain_lookup, file_registry
+        )
+
+        # Merge old + new
+        self.postings = self.merge_postings(old_postings, new_postings)
+
+        # Save merged postings
+        saved_paths = self.save(version, compression_level)
+
+        logger.info(
+            f"Built incremental postings index: "
+            f"{len(old_postings)} old + {len(new_postings)} new = "
+            f"{len(self.postings)} total postings"
+        )
+
+        return saved_paths

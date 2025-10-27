@@ -210,3 +210,112 @@ class DomainDictionary:
         """
         domains = self.extract_unique_domains(dataset_ids)
         return self.write_domain_dict(domains, version, compression_level)
+
+    def extract_domains_from_files(self, parquet_files: list[Path]) -> list[str]:
+        """
+        Extract unique domains from specific Parquet files.
+
+        Args:
+            parquet_files: List of Parquet file paths to scan
+
+        Returns:
+            Sorted list of unique domain strings
+        """
+        logger.info(f"Extracting domains from {len(parquet_files)} Parquet files...")
+
+        unique_domains = set()
+
+        for i, parquet_file in enumerate(parquet_files, 1):
+            if i % 100 == 0:
+                logger.info(
+                    f"Processed {i}/{len(parquet_files)} files, "
+                    f"{len(unique_domains)} unique domains so far"
+                )
+
+            try:
+                # Read only the domain column
+                df = pl.read_parquet(parquet_file, columns=["domain"])
+                domains = df["domain"].unique().to_list()
+                unique_domains.update(domains)
+            except Exception as e:
+                logger.error(f"Error reading {parquet_file}: {e}")
+                continue
+
+        sorted_domains = sorted(unique_domains)
+        logger.info(f"Extracted {len(sorted_domains)} unique domains from new files")
+
+        return sorted_domains
+
+    def merge_sorted_domains(
+        self, old_domains: list[str], new_domains: list[str]
+    ) -> list[str]:
+        """
+        Merge two sorted lists of domains into a single sorted unique list.
+
+        Args:
+            old_domains: Sorted list of existing domains
+            new_domains: Sorted list of new domains
+
+        Returns:
+            Merged sorted list of unique domains
+        """
+        logger.info(
+            f"Merging {len(old_domains)} old domains with {len(new_domains)} new domains"
+        )
+
+        # Use set to deduplicate, then sort
+        # This is simpler than manual merge and still efficient for reasonable sizes
+        merged = sorted(set(old_domains) | set(new_domains))
+
+        logger.info(f"Merged result: {len(merged)} unique domains")
+
+        return merged
+
+    def build_incremental(
+        self,
+        version: str,
+        prev_version: str | None,
+        new_files: list[Path],
+        compression_level: int = 6,
+    ) -> Path:
+        """
+        Build domain dictionary incrementally by merging with previous version.
+
+        Args:
+            version: New version identifier
+            prev_version: Previous version identifier (None for first build)
+            new_files: List of new Parquet files to process
+            compression_level: Zstd compression level
+
+        Returns:
+            Path to the written domain dictionary file
+        """
+        logger.info("Building domain dictionary incrementally...")
+
+        # Load previous domains if available
+        old_domains = []
+        if prev_version:
+            try:
+                old_domains = self.read_domain_dict(prev_version)
+                logger.info(f"Loaded {len(old_domains)} domains from previous version")
+            except FileNotFoundError:
+                logger.warning(
+                    f"Previous domain dictionary not found for version {prev_version}, "
+                    "starting from scratch"
+                )
+
+        # Extract domains from new files only
+        new_domains = self.extract_domains_from_files(new_files)
+
+        # Merge old + new
+        merged_domains = self.merge_sorted_domains(old_domains, new_domains)
+
+        # Write merged dictionary
+        output_path = self.write_domain_dict(merged_domains, version, compression_level)
+
+        logger.info(
+            f"Built incremental domain dictionary: "
+            f"{len(old_domains)} old + {len(new_domains)} new = {len(merged_domains)} total"
+        )
+
+        return output_path
