@@ -353,6 +353,10 @@ Visit `http://localhost:8000/docs` for interactive API documentation.
 ## Known Issues & Notes
 
 ### Fixed Issues
+- ✅ **P0:** FileRegistry API usage in URL query path (fixed 2025-10-27)
+  - Issue: `QueryService.get_urls_for_domain_dataset()` called non-existent `get_file()` method and dereferenced `.path` attribute
+  - Impact: All `/v1/domain/{domain}/datasets/{dataset_id}/urls` requests would return 500 error
+  - Fix: Use correct `get_file_info(file_id)` method and access `["parquet_rel_path"]` dict key
 - ✅ **P1:** File registry CSV serialization bug (fixed 2025-10-24)
   - Issue: `df.write_csv()` returns None, causing AttributeError
   - Fix: Use StringIO buffer to capture CSV output

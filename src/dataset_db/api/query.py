@@ -112,13 +112,13 @@ class QueryService:
 
         for file_id, row_group in row_group_refs:
             # Get file metadata from registry
-            file_info = self.loader.file_registry.get_file(file_id)
+            file_info = self.loader.file_registry.get_file_info(file_id)
             if file_info is None:
                 logger.warning(f"File {file_id} not found in registry, skipping")
                 continue
 
             # Read the Parquet row group
-            parquet_path = self.loader.base_path / file_info.path
+            parquet_path = self.loader.base_path / "urls" / file_info["parquet_rel_path"]
             if not parquet_path.exists():
                 logger.warning(f"Parquet file not found: {parquet_path}, skipping")
                 continue
