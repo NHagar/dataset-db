@@ -92,8 +92,11 @@ class QueryService:
             )
 
         # Lookup postings for (domain_id, dataset_id)
-        postings_entry = self.loader.postings.lookup(domain_id, dataset_id)
-        if postings_entry is None:
+        # Get current version from loader
+        version = self.loader._current_version.version
+        row_group_refs = self.loader.postings.lookup(version, domain_id, dataset_id)
+
+        if not row_group_refs:
             # No postings found (should not happen if membership index is consistent)
             logger.warning(
                 f"No postings found for domain_id={domain_id}, dataset_id={dataset_id}"
@@ -101,9 +104,6 @@ class QueryService:
             return URLsResponse(
                 domain=domain, dataset_id=dataset_id, total_est=0, items=[], next_offset=None
             )
-
-        # Decode postings payload to get list of (file_id, row_group) tuples
-        row_group_refs = postings_entry.row_groups
 
         # Calculate which row groups we need to read
         urls = []

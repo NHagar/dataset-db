@@ -357,6 +357,14 @@ Visit `http://localhost:8000/docs` for interactive API documentation.
   - Issue: `QueryService.get_urls_for_domain_dataset()` called non-existent `get_file()` method and dereferenced `.path` attribute
   - Impact: All `/v1/domain/{domain}/datasets/{dataset_id}/urls` requests would return 500 error
   - Fix: Use correct `get_file_info(file_id)` method and access `["parquet_rel_path"]` dict key
+- ✅ **P1:** Test client lifespan patching ineffective (fixed 2025-10-27)
+  - Issue: API tests tried to monkey-patch lifespan after app creation, causing tests to load from wrong directory
+  - Impact: Tests would fail if `./data` directory was absent; couldn't exercise endpoints with temporary test data
+  - Fix: Initialize loader before TestClient creation and copy routes to new app instance with test lifespan
+- ✅ **P1:** PostingsIndex.lookup() API mismatch (fixed 2025-10-27)
+  - Issue: Query service called `lookup(domain_id, dataset_id)` but method requires `lookup(version, domain_id, dataset_id)`
+  - Impact: URL queries would fail with TypeError
+  - Fix: Pass version from loader's `_current_version.version` as first argument
 - ✅ **P1:** File registry CSV serialization bug (fixed 2025-10-24)
   - Issue: `df.write_csv()` returns None, causing AttributeError
   - Fix: Use StringIO buffer to capture CSV output
