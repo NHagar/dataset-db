@@ -219,3 +219,100 @@ def test_incremental_first_build(test_data_dir, sample_urls_batch1):
     # Check that indexes were built
     domains = builder.domain_dict.read_domain_dict(version1)
     assert len(domains) > 0
+
+
+def test_domain_id_stability(test_data_dir):
+    """
+    Test that domain IDs remain stable across incremental builds.
+
+    This is a critical test for the bug fix: when new domains are added,
+    existing domain IDs must not change. New domains should be appended
+    to the end of the domain list.
+    """
+    processor = IngestionProcessor()
+    writer = ParquetWriter(base_path=test_data_dir)
+
+    # Phase 1: Initial build with domains that will sort in middle
+    batch1 = pl.DataFrame(
+        {
+            "url": [
+                "https://middle1.com/page",
+                "https://middle2.com/page",
+            ]
+        }
+    )
+
+    normalized1 = processor.process_batch(batch1, "dataset1")
+    writer.write_batch(normalized1)
+    writer.flush()
+
+    builder1 = IndexBuilder(test_data_dir)
+    version1 = builder1.build_all()
+
+    # Get domain IDs from version 1
+    domains_v1 = builder1.domain_dict.read_domain_dict(version1)
+    mphf_v1 = builder1.mphf
+    mphf_v1.load(test_data_dir / "index" / version1 / "domains.mphf")
+
+    middle1_id_v1 = mphf_v1.lookup("middle1.com")
+    middle2_id_v1 = mphf_v1.lookup("middle2.com")
+
+    # Phase 2: Add domains that would sort BEFORE and AFTER existing domains
+    batch2 = pl.DataFrame(
+        {
+            "url": [
+                "https://aaa-before.com/page",  # Sorts before middle1/middle2
+                "https://zzz-after.com/page",  # Sorts after middle1/middle2
+            ]
+        }
+    )
+
+    normalized2 = processor.process_batch(batch2, "dataset2")
+    writer.write_batch(normalized2)
+    writer.flush()
+
+    # Build incrementally
+    builder2 = IndexBuilder(test_data_dir)
+    version2 = builder2.build_incremental()
+
+    # Get domain IDs from version 2
+    domains_v2 = builder2.domain_dict.read_domain_dict(version2)
+    mphf_v2 = builder2.mphf
+    mphf_v2.load(test_data_dir / "index" / version2 / "domains.mphf")
+
+    middle1_id_v2 = mphf_v2.lookup("middle1.com")
+    middle2_id_v2 = mphf_v2.lookup("middle2.com")
+    aaa_id_v2 = mphf_v2.lookup("aaa-before.com")
+    zzz_id_v2 = mphf_v2.lookup("zzz-after.com")
+
+    # CRITICAL: Existing domain IDs must not change
+    assert (
+        middle1_id_v1 == middle1_id_v2
+    ), f"middle1.com ID changed: {middle1_id_v1} -> {middle1_id_v2}"
+    assert (
+        middle2_id_v1 == middle2_id_v2
+    ), f"middle2.com ID changed: {middle2_id_v1} -> {middle2_id_v2}"
+
+    # New domains should be appended (higher IDs than existing)
+    assert (
+        aaa_id_v2 > middle2_id_v2
+    ), "New domain aaa-before.com should have ID > middle2.com"
+    assert (
+        zzz_id_v2 > middle2_id_v2
+    ), "New domain zzz-after.com should have ID > middle2.com"
+
+    # Verify domain list structure
+    # Old domains should be at the beginning, new domains appended
+    assert domains_v2[: len(domains_v1)] == domains_v1, "Old domains should be unchanged"
+    assert len(domains_v2) == len(domains_v1) + 2, "Should have 2 new domains"
+
+    # Verify membership index still works correctly with stable IDs
+    from dataset_db.index import MembershipIndex
+
+    membership = MembershipIndex(test_data_dir)
+    membership_path = test_data_dir / "index" / version2 / "domain_to_datasets.roar"
+    membership.load(membership_path, len(domains_v2))
+
+    # middle1.com should still be in dataset1
+    datasets_middle1 = membership.get_datasets(middle1_id_v2)
+    assert len(datasets_middle1) > 0, "middle1.com should have datasets"

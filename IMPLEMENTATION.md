@@ -15,7 +15,7 @@
 ✅ **Milestone 5:** Incremental Updates
 ⏭️ **Milestone 6:** Pre-Aggregations & Optimizations (Future)
 
-**Test Suite:** 148 unit tests
+**Test Suite:** 149 unit tests
 **Code Quality:** All linting checks pass (`ruff check`)
 
 ---
@@ -354,6 +354,11 @@ Visit `http://localhost:8000/docs` for interactive API documentation.
 ## Known Issues & Notes
 
 ### Fixed Issues
+- ✅ **P0:** Domain ID stability in incremental builds (fixed 2025-10-27)
+  - Issue: `merge_sorted_domains()` was re-sorting all domains, causing existing domain IDs to shift when new domains sorted before existing ones
+  - Impact: Loaded membership/postings indexes used old domain IDs, causing incorrect lookups after incremental build
+  - Fix: Append new domains to end of list instead of merge-sorting, preserving all existing domain IDs
+  - Test: [test_domain_id_stability()](tests/unit/test_incremental.py:224) verifies domain IDs remain stable across builds
 - ✅ **P0:** FileRegistry API usage in URL query path (fixed 2025-10-27)
   - Issue: `QueryService.get_urls_for_domain_dataset()` called non-existent `get_file()` method and dereferenced `.path` attribute
   - Impact: All `/v1/domain/{domain}/datasets/{dataset_id}/urls` requests would return 500 error
@@ -466,9 +471,13 @@ def build_incremental(version, prev_version):
     write_domains(version, merged)
 ```
 
-**Trade-off:** Domain IDs shift when new domains inserted. This is acceptable because:
-- MPHF provides O(1) string→ID lookup independent of sequence
-- Downstream indexes (membership, postings) keyed by domain_id, so they must be updated anyway
+**Implementation Detail - Domain ID Stability:**
+To preserve correctness of incremental builds, new domains are **appended** to the end of the existing domain list rather than merge-sorted. This ensures:
+- Existing domain IDs remain unchanged across versions
+- Old membership/postings data remains valid
+- Only new domains get new IDs (at the end)
+
+This is critical because loaded indexes from the previous version use the old domain IDs. If we re-sorted and changed IDs, lookups would return incorrect results.
 
 #### 2. MPHF Incremental Updates
 
@@ -694,8 +703,9 @@ def build_file_registry_incremental(version, prev_version):
 5. [IndexBuilder.build_incremental()](src/dataset_db/index/builder.py:121) - Orchestration layer
 
 **Testing:**
-- 5 new unit tests in [test_incremental.py](tests/unit/test_incremental.py)
-- All 148 tests passing
+- 6 unit tests in [test_incremental.py](tests/unit/test_incremental.py)
+  - Including critical domain ID stability test
+- All 149 tests passing
 - Example script: [examples/incremental_updates.py](examples/incremental_updates.py)
 
 **Key Features:**

@@ -250,24 +250,36 @@ class DomainDictionary:
         self, old_domains: list[str], new_domains: list[str]
     ) -> list[str]:
         """
-        Merge two sorted lists of domains into a single sorted unique list.
+        Merge domain lists by appending new domains to preserve existing domain IDs.
+
+        IMPORTANT: This method preserves the existing domain ordering to maintain
+        stable domain IDs across incremental builds. New domains are appended to
+        the end in sorted order.
 
         Args:
             old_domains: Sorted list of existing domains
             new_domains: Sorted list of new domains
 
         Returns:
-            Merged sorted list of unique domains
+            Merged list with old domains first, then new unique domains appended
         """
         logger.info(
             f"Merging {len(old_domains)} old domains with {len(new_domains)} new domains"
         )
 
-        # Use set to deduplicate, then sort
-        # This is simpler than manual merge and still efficient for reasonable sizes
-        merged = sorted(set(old_domains) | set(new_domains))
+        # Convert old domains to set for O(1) lookup
+        old_domain_set = set(old_domains)
 
-        logger.info(f"Merged result: {len(merged)} unique domains")
+        # Find truly new domains (not in old set)
+        truly_new = sorted([d for d in new_domains if d not in old_domain_set])
+
+        # Append new domains to preserve old domain IDs
+        merged = old_domains + truly_new
+
+        logger.info(
+            f"Merged result: {len(merged)} total domains "
+            f"({len(old_domains)} existing, {len(truly_new)} new)"
+        )
 
         return merged
 
