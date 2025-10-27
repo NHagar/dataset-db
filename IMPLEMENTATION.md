@@ -1,8 +1,8 @@
 # Implementation Log
 
 **Project:** dataset-db - Domain → Datasets → URLs at extreme scale
-**Status:** Milestone 3 Complete
-**Last Updated:** 2025-10-24
+**Status:** Milestone 4 Complete
+**Last Updated:** 2025-10-27
 
 ---
 
@@ -11,9 +11,10 @@
 ✅ **Milestone 1:** URL Normalization & Ingestion
 ✅ **Milestone 2:** Parquet Storage with Partitioning
 ✅ **Milestone 3:** Index Building (Domain Dict, MPHF, Membership, Postings)
-⏭️ **Milestone 4:** API Layer (Next)
+✅ **Milestone 4:** API Layer (FastAPI Server)
+⏭️ **Milestone 5:** Incremental Updates (Next)
 
-**Test Suite:** 127 unit tests, all passing
+**Test Suite:** 145+ unit tests
 **Code Quality:** All linting checks pass (`ruff check`)
 
 ---
@@ -219,27 +220,151 @@ See [examples/](examples/) for complete demonstrations.
 
 ---
 
-## Next Steps (Milestone 4)
+## Milestone 4: API Layer ✅
 
-### API Layer
-- [ ] `GET /domain/{d}` - List datasets containing domain
-- [ ] `GET /domain/{d}/dataset/{id}/urls` - Paginated URL listing
-- [ ] Memory-mapped index loading
-- [ ] LRU caching for hot domains
-- [ ] Row-group-based URL retrieval from Parquet
+### Components
 
-### Implementation Plan
-1. FastAPI server with async handlers
-2. Index loader (singleton with lazy loading)
-3. Query algorithm per spec.md §4.3
-4. Pagination with offset/limit
-5. Response streaming for large result sets
+| Component | File | Purpose |
+|-----------|------|---------|
+| Response Models | [models.py](src/dataset_db/api/models.py) | Pydantic models for API responses |
+| Index Loader | [loader.py](src/dataset_db/api/loader.py) | Lazy loading + LRU caching |
+| Query Service | [query.py](src/dataset_db/api/query.py) | Domain/URL query algorithms |
+| FastAPI Server | [server.py](src/dataset_db/api/server.py) | HTTP endpoints |
+
+### API Endpoints
+
+#### GET /v1/domain/{domain}
+Returns datasets containing the given domain.
+
+**Example:**
+```bash
+curl http://localhost:8000/v1/domain/example.com
+```
+
+**Response:**
+```json
+{
+  "domain": "example.com",
+  "domain_id": 12345,
+  "datasets": [
+    {"dataset_id": 1, "url_count_est": null},
+    {"dataset_id": 2, "url_count_est": null}
+  ]
+}
+```
+
+#### GET /v1/domain/{domain}/datasets/{dataset_id}/urls
+Returns paginated URLs for a (domain, dataset) pair.
+
+**Parameters:**
+- `offset` (int, default: 0) - Pagination offset
+- `limit` (int, default: 1000, max: 10000) - Number of URLs to return
+
+**Example:**
+```bash
+curl "http://localhost:8000/v1/domain/example.com/datasets/1/urls?offset=0&limit=10"
+```
+
+**Response:**
+```json
+{
+  "domain": "example.com",
+  "dataset_id": 1,
+  "total_est": null,
+  "items": [
+    {
+      "url_id": 12345678901234,
+      "url": "https://example.com/path?query=value",
+      "ts": null
+    }
+  ],
+  "next_offset": 10
+}
+```
+
+### Key Features
+
+**Index Loader ([loader.py](src/dataset_db/api/loader.py:23))**
+- Singleton pattern for global index access
+- Lazy loading of all index structures at startup
+- LRU caching for hot domains (1000 entries)
+- Memory-efficient domain dictionary loading
+- Cached methods:
+  - `lookup_domain_id(domain)` - Domain → ID lookup
+  - `get_domain_string(domain_id)` - ID → Domain reverse lookup
+  - `get_datasets_for_domain(domain_id)` - Domain → Datasets
+
+**Query Service ([query.py](src/dataset_db/api/query.py:17))**
+- Implements spec.md §4.3 query algorithms
+- Domain lookup via MPHF (O(1) average)
+- Dataset membership via Roaring bitmaps
+- URL retrieval with row-group-level Parquet reads
+- Pagination support with offset/limit
+
+**FastAPI Server ([server.py](src/dataset_db/api/server.py))**
+- Async request handlers
+- Automatic index loading at startup (lifespan context)
+- Input validation via Pydantic
+- Error handling with appropriate HTTP status codes
+- OpenAPI documentation at `/docs`
+
+### Performance
+
+- **Domain lookup:** O(1) via MPHF + LRU cache
+- **Dataset membership:** O(1) via Roaring bitmap lookup
+- **URL retrieval:** Efficient Parquet row-group scans with filtering
+- **Memory usage:** ~10-20MB for indexes (164K domains)
+
+### Running the Server
+
+```bash
+# Start server
+uv run python examples/api_server.py
+
+# Or directly with uvicorn
+uv run uvicorn dataset_db.api.server:app --host 0.0.0.0 --port 8000
+```
+
+Visit `http://localhost:8000/docs` for interactive API documentation.
+
+### Tests
+
+- 18 unit tests covering all API components
+- Test fixture creates temporary test data + indexes
+- Tests loader initialization, caching, query service, endpoints
+- See [test_api.py](tests/unit/test_api.py)
+
+### Current Limitations
+
+- URL counts (`total_est`, `url_count_est`) not yet computed (Milestone 6)
+- Row-group reading via Polars scans full file (production should use PyArrow/DuckDB for true row-group reads)
+- No streaming response for very large result sets
+
+### Future Optimizations
+
+- Pre-computed (domain, dataset) → url_count table
+- True row-group-level reads via PyArrow
+- Streaming JSON responses for large result sets
+- Response compression (gzip/brotli)
+- Rate limiting and API keys
 
 ---
 
 ## Known Issues & Notes
 
 ### Fixed Issues
+- ✅ **P0:** FileRegistry API usage in URL query path (fixed 2025-10-27)
+  - Issue: `QueryService.get_urls_for_domain_dataset()` called non-existent `get_file()` method and dereferenced `.path` attribute
+  - Impact: All `/v1/domain/{domain}/datasets/{dataset_id}/urls` requests would return 500 error
+  - Fix: Use correct `get_file_info(file_id)` method and access `["parquet_rel_path"]` dict key
+- ✅ **P1:** Test client lifespan patching ineffective (fixed 2025-10-27)
+  - Issue: API tests tried to monkey-patch lifespan after app creation, causing tests to load from wrong directory
+  - Impact: Tests would fail if `./data` directory was absent; couldn't exercise endpoints with temporary test data
+  - Fix: Initialize loader before TestClient creation and copy routes to new app instance with test lifespan
+- ✅ **P1:** PostingsIndex.lookup() API mismatch (fixed 2025-10-27)
+  - Issue: Query service called `lookup(domain_id, dataset_id)` but method requires `lookup(version, domain_id, dataset_id)`
+  - Impact: URL queries would fail with TypeError
+  - Fix: Pass version from loader's `_current_version.version` as first argument
 - ✅ **P1:** File registry CSV serialization bug (fixed 2025-10-24)
   - Issue: `df.write_csv()` returns None, causing AttributeError
   - Fix: Use StringIO buffer to capture CSV output
@@ -271,17 +396,22 @@ src/dataset_db/
 │   ├── layout.py            # Hive-style partitioning
 │   └── parquet_writer.py    # Optimized Parquet writer
 ├── index/
-│   ├── domain_dict.py       # Domain dictionary
+│   ├── domain_dict.py       # Domain dictionary builder
 │   ├── mphf.py              # Minimal perfect hash
 │   ├── membership.py        # Roaring bitmaps (domain→datasets)
 │   ├── file_registry.py     # File ID registry
 │   ├── postings.py          # Postings index
 │   ├── manifest.py          # Version management
 │   └── builder.py           # Index builder orchestrator
+├── api/
+│   ├── models.py            # Pydantic response models
+│   ├── loader.py            # Index loader with caching
+│   ├── query.py             # Query service
+│   └── server.py            # FastAPI server
 └── config.py                # Configuration management
 
-tests/unit/                  # 127 tests
-examples/                    # Working examples
+tests/unit/                  # 145+ tests
+examples/                    # Working examples + API server
 ```
 
 ---
