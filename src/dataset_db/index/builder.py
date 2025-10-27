@@ -118,30 +118,113 @@ class IndexBuilder:
 
         return version
 
-    def build_incremental(self, dataset_ids: list[int]) -> str:
+    def build_incremental(self, dataset_ids: list[int] | None = None) -> str:
         """
-        Build indexes incrementally for specific datasets.
+        Build indexes incrementally by merging with previous version.
 
-        Note: This is a simplified implementation. Production would merge with
-        existing indexes rather than rebuilding from scratch.
+        This method:
+        1. Determines which Parquet files are new (not in previous file registry)
+        2. Loads previous indexes
+        3. Processes only new files
+        4. Merges with previous data
+        5. Writes new version atomically
 
         Args:
-            dataset_ids: List of dataset IDs to process
+            dataset_ids: Optional list of dataset IDs to process (if None, auto-detect new files)
 
         Returns:
             Version identifier of the built index
         """
         version = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        logger.info(
-            f"Building incremental indexes for datasets {dataset_ids}, version {version}"
+        logger.info(f"Building incremental indexes for version {version}")
+
+        # Load manifest to get previous version
+        self.manifest.load()
+        prev_version_obj = self.manifest.get_current_version()
+        prev_version = prev_version_obj.version if prev_version_obj else None
+
+        if prev_version is None:
+            logger.info("No previous version found, building from scratch")
+            return self.build_all(version=version, dataset_ids=dataset_ids)
+
+        logger.info(f"Previous version: {prev_version}")
+
+        # Step 1: Determine new files BEFORE building registry
+        logger.info("Step 1/6: Determining new files...")
+        prev_registry_path = self.base_path / prev_version_obj.files_tsv
+        new_files = self.file_registry.get_new_files_since_version(prev_registry_path)
+        logger.info(f"Found {len(new_files)} new files to process")
+
+        if not new_files:
+            logger.info("No new files to process, skipping index build")
+            # No need to build anything if there are no new files
+            return prev_version
+
+        # Step 2: Build file registry incrementally
+        logger.info("Step 2/6: Building file registry incrementally...")
+        self.file_registry.build_incremental(
+            version=version,
+            base_path=self.base_path,
+            prev_registry_path=prev_registry_path,
         )
 
-        # For now, just rebuild everything with the specified datasets
-        # In production, you'd want to:
-        # 1. Load existing indexes
-        # 2. Merge new data
-        # 3. Compact if necessary
-        return self.build_all(version=version, dataset_ids=dataset_ids)
+        # Step 3: Build domain dictionary incrementally
+        logger.info("Step 3/6: Building domain dictionary incrementally...")
+        self.domain_dict.build_incremental(
+            version=version,
+            prev_version=prev_version,
+            new_files=new_files,
+            compression_level=self.compression_level,
+        )
+
+        # Step 4: Build MPHF (full rebuild for now)
+        logger.info("Step 4/6: Building MPHF...")
+        domains = self.domain_dict.read_domain_dict(version)
+        self.mphf.build(domains)
+        mphf_path = self.base_path / "index" / version / "domains.mphf"
+        self.mphf.save(mphf_path, compression_level=self.compression_level)
+
+        # Create domain lookup for downstream indexes
+        domain_lookup = {domain: idx for idx, domain in enumerate(domains)}
+
+        # Step 5: Build membership index incrementally
+        logger.info("Step 5/6: Building membership index incrementally...")
+        prev_membership_path = self.base_path / prev_version_obj.d2d_roar
+        prev_domains = self.domain_dict.read_domain_dict(prev_version)
+        self.membership.build_incremental(
+            domain_lookup=domain_lookup,
+            version=version,
+            base_path=self.base_path,
+            prev_membership_path=prev_membership_path,
+            new_files=new_files,
+            num_old_domains=len(prev_domains),
+        )
+
+        # Step 6: Build postings index incrementally
+        logger.info("Step 6/6: Building postings index incrementally...")
+        file_lookup = {
+            info["parquet_rel_path"]: info["file_id"]
+            for info in self.file_registry.files
+        }
+        self.postings.build_incremental(
+            domain_lookup=domain_lookup,
+            file_registry=file_lookup,
+            version=version,
+            prev_version=prev_version,
+            new_files=new_files,
+            compression_level=self.compression_level,
+        )
+
+        # Step 7: Update manifest
+        logger.info("Step 7/7: Publishing to manifest...")
+        self.manifest.publish_version(version)
+
+        logger.info(
+            f"Successfully built incremental indexes for version {version} "
+            f"({len(new_files)} new files processed)"
+        )
+
+        return version
 
     def get_stats(self, version: str) -> dict[str, int]:
         """
