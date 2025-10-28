@@ -230,32 +230,38 @@ def build_indexes(incremental: bool = False):
         # Load and inspect indexes
         from dataset_db.index import Manifest
 
-        manifest = Manifest(base_path / "index")
+        manifest = Manifest(base_path)  # Pass base_path, not base_path / "index"
         manifest.load()
         current = manifest.get_current_version()
 
         print(f"\nIndex files:")
         print(f"  Domain dictionary: {current.domains_txt}")
         print(f"  Domain MPHF: {current.domains_mphf}")
-        print(f"  Membership index: {current.domain_to_datasets}")
+        print(f"  Membership index: {current.d2d_roar}")
         print(f"  File registry: {current.files_tsv}")
 
         # Show index stats
-        from dataset_db.index import DomainDictionary, SimpleMPHF, MembershipIndex
+        from dataset_db.index import SimpleMPHF, MembershipIndex
+        import zstandard as zstd
 
         # Load domain dictionary
-        domain_dict = DomainDictionary()
-        domain_dict.load(base_path / "index" / current.domains_txt)
-        print(f"\nDomains indexed: {len(domain_dict.domains):,}")
+        dict_path = base_path / current.domains_txt
+        decompressor = zstd.ZstdDecompressor()
+        compressed_data = dict_path.read_bytes()
+        decompressed_data = decompressor.decompress(compressed_data)
+        domains_text = decompressed_data.decode("utf-8")
+        domains = [line for line in domains_text.split("\n") if line]
+
+        print(f"\nDomains indexed: {len(domains):,}")
 
         # Show sample domains
         print(f"Sample domains:")
-        for i, domain in enumerate(domain_dict.domains[:5]):
+        for i, domain in enumerate(domains[:5]):
             print(f"  {i}: {domain}")
 
         # Load membership index
-        membership = MembershipIndex()
-        membership.load(base_path / "index" / current.domain_to_datasets)
+        membership = MembershipIndex(base_path)
+        membership.load(base_path / current.d2d_roar, len(domains))
         print(f"\nDomain-to-dataset mappings: {len(membership.domain_bitmaps):,}")
 
         return True
@@ -285,22 +291,28 @@ def test_queries():
 
         print("\nLoading indexes...")
         loader = IndexLoader(base_path)
-        loader.initialize()
+        loader.load()
 
         query_service = QueryService(loader)
 
         # Get sample domains
-        from dataset_db.index import Manifest, DomainDictionary
+        from dataset_db.index import Manifest
+        import zstandard as zstd
 
-        manifest = Manifest(base_path / "index")
+        manifest = Manifest(base_path)
         manifest.load()
         current = manifest.get_current_version()
 
-        domain_dict = DomainDictionary()
-        domain_dict.load(base_path / "index" / current.domains_txt)
+        # Load domains
+        dict_path = base_path / current.domains_txt
+        decompressor = zstd.ZstdDecompressor()
+        compressed_data = dict_path.read_bytes()
+        decompressed_data = decompressor.decompress(compressed_data)
+        domains_text = decompressed_data.decode("utf-8")
+        domains = [line for line in domains_text.split("\n") if line]
 
         # Test with first few domains
-        sample_domains = domain_dict.domains[:5]
+        sample_domains = domains[:5]
 
         print_subsection("Testing Domain Queries")
 
@@ -311,21 +323,21 @@ def test_queries():
             result = query_service.get_datasets_for_domain(domain)
 
             if result:
-                print(f"  Domain ID: {result['domain_id']}")
-                print(f"  Datasets: {len(result['datasets'])}")
+                print(f"  Domain ID: {result.domain_id}")
+                print(f"  Datasets: {len(result.datasets)}")
 
-                for ds in result["datasets"]:
-                    print(f"    - Dataset {ds['dataset_id']}: ~{ds['url_count_est']} URLs")
+                for ds in result.datasets:
+                    print(f"    - Dataset {ds.dataset_id}: ~{ds.url_count_est} URLs")
 
                     # Get sample URLs from first dataset
-                    if ds == result["datasets"][0]:
-                        print(f"\n    Sample URLs from dataset {ds['dataset_id']}:")
+                    if ds == result.datasets[0]:
+                        print(f"\n    Sample URLs from dataset {ds.dataset_id}:")
                         urls_result = query_service.get_urls_for_domain_dataset(
-                            domain, ds["dataset_id"], offset=0, limit=5
+                            domain, ds.dataset_id, offset=0, limit=5
                         )
 
-                        for item in urls_result["items"][:5]:
-                            print(f"      - {item['url']}")
+                        for item in urls_result.items[:5]:
+                            print(f"      - {item.url}")
             else:
                 print(f"  No data found")
 
@@ -397,7 +409,7 @@ def validate_implementation():
 
     if manifest_path.exists():
         from dataset_db.index import Manifest
-        manifest = Manifest(base_path / "index")
+        manifest = Manifest(base_path)
         manifest.load()
         current = manifest.get_current_version()
         print(f"   ✓ Found index version: {current.version}")
@@ -411,22 +423,26 @@ def validate_implementation():
 
     try:
         from dataset_db.api import IndexLoader, QueryService
-        from dataset_db.index import DomainDictionary
+        import zstandard as zstd
 
         loader = IndexLoader(base_path)
-        loader.initialize()
+        loader.load()
 
         query_service = QueryService(loader)
 
         # Get a sample domain
-        domain_dict = DomainDictionary()
-        domain_dict.load(base_path / "index" / current.domains_txt)
+        dict_path = base_path / current.domains_txt
+        decompressor = zstd.ZstdDecompressor()
+        compressed_data = dict_path.read_bytes()
+        decompressed_data = decompressor.decompress(compressed_data)
+        domains_text = decompressed_data.decode("utf-8")
+        domains = [line for line in domains_text.split("\n") if line]
 
-        if len(domain_dict.domains) > 0:
-            test_domain = domain_dict.domains[0]
+        if len(domains) > 0:
+            test_domain = domains[0]
             result = query_service.get_datasets_for_domain(test_domain)
 
-            if result and len(result["datasets"]) > 0:
+            if result and len(result.datasets) > 0:
                 print(f"   ✓ Query service working (tested {test_domain})")
                 checks_passed += 1
             else:

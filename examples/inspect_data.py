@@ -80,10 +80,11 @@ def inspect_indexes():
         print("Run index build: python examples/e2e_test.py --skip-ingestion")
         return False
 
-    from dataset_db.index import Manifest, DomainDictionary, MembershipIndex
+    from dataset_db.index import Manifest, MembershipIndex
+    import zstandard as zstd
 
     # Load manifest
-    manifest = Manifest(base_path / "index")
+    manifest = Manifest(base_path)
     manifest.load()
     current = manifest.get_current_version()
 
@@ -91,24 +92,28 @@ def inspect_indexes():
     print(f"\nIndex Files:")
     print(f"  Domain dictionary: {current.domains_txt}")
     print(f"  Domain MPHF: {current.domains_mphf}")
-    print(f"  Membership index: {current.domain_to_datasets}")
+    print(f"  Membership index: {current.d2d_roar}")
     print(f"  File registry: {current.files_tsv}")
 
     # Load domain dictionary
-    domain_dict = DomainDictionary()
-    domain_dict.load(base_path / "index" / current.domains_txt)
+    dict_path = base_path / current.domains_txt
+    decompressor = zstd.ZstdDecompressor()
+    compressed_data = dict_path.read_bytes()
+    decompressed_data = decompressor.decompress(compressed_data)
+    domains_text = decompressed_data.decode("utf-8")
+    domains = [line for line in domains_text.split("\n") if line]
 
     print(f"\nDomain Statistics:")
-    print(f"  Total domains: {len(domain_dict.domains):,}")
+    print(f"  Total domains: {len(domains):,}")
 
     # Show sample domains
     print(f"\nSample Domains (first 10):")
-    for i, domain in enumerate(domain_dict.domains[:10]):
+    for i, domain in enumerate(domains[:10]):
         print(f"  {i+1}. {domain}")
 
     # Load membership index
-    membership = MembershipIndex()
-    membership.load(base_path / "index" / current.domain_to_datasets)
+    membership = MembershipIndex(base_path)
+    membership.load(base_path / current.d2d_roar, len(domains))
 
     print(f"\nMembership Statistics:")
     print(f"  Domain-to-dataset mappings: {len(membership.domain_bitmaps):,}")
@@ -117,8 +122,8 @@ def inspect_indexes():
     print(f"\nSample Memberships:")
     for i, (domain_id, bitmap) in enumerate(list(membership.domain_bitmaps.items())[:5]):
         dataset_ids = list(bitmap)
-        if i < len(domain_dict.domains):
-            domain_str = domain_dict.domains[i]
+        if i < len(domains):
+            domain_str = domains[i]
         else:
             domain_str = f"Domain ID {domain_id}"
         print(f"  {domain_str}: datasets {dataset_ids}")
@@ -146,7 +151,7 @@ def query_domain(domain: str):
         # Load indexes
         print("\nLoading indexes...")
         loader = IndexLoader(base_path)
-        loader.initialize()
+        loader.load()
 
         query_service = QueryService(loader)
 
@@ -158,21 +163,21 @@ def query_domain(domain: str):
             print(f"\nNo data found for domain: {domain}")
             return True
 
-        print(f"\nDomain ID: {result['domain_id']}")
-        print(f"Found in {len(result['datasets'])} dataset(s):")
+        print(f"\nDomain ID: {result.domain_id}")
+        print(f"Found in {len(result.datasets)} dataset(s):")
 
-        for ds in result["datasets"]:
-            print(f"\n  Dataset {ds['dataset_id']}:")
-            print(f"    Estimated URLs: {ds['url_count_est'] or 'unknown'}")
+        for ds in result.datasets:
+            print(f"\n  Dataset {ds.dataset_id}:")
+            print(f"    Estimated URLs: {ds.url_count_est or 'unknown'}")
 
             # Get sample URLs
             print(f"    Sample URLs:")
             urls_result = query_service.get_urls_for_domain_dataset(
-                domain, ds["dataset_id"], offset=0, limit=10
+                domain, ds.dataset_id, offset=0, limit=10
             )
 
-            for i, item in enumerate(urls_result["items"][:10]):
-                print(f"      {i+1}. {item['url']}")
+            for i, item in enumerate(urls_result.items[:10]):
+                print(f"      {i+1}. {item.url}")
 
         return True
 
@@ -189,18 +194,22 @@ def show_dataset_registry():
     print("DATASET REGISTRY")
     print("=" * 80)
 
-    from dataset_db.ingestion.processor import DatasetRegistry
+    try:
+        from dataset_db.ingestion.processor import DatasetRegistry
 
-    registry = DatasetRegistry()
-    registry_dict = registry.to_dict()
+        registry = DatasetRegistry()
+        registry_dict = registry.to_dict()
 
-    if not registry_dict:
-        print("\nNo datasets registered yet.")
-        return
+        if not registry_dict:
+            print("\nNo datasets registered yet.")
+            return
 
-    print(f"\nRegistered Datasets: {len(registry_dict)}")
-    for name, dataset_id in sorted(registry_dict.items(), key=lambda x: x[1]):
-        print(f"  ID {dataset_id}: {name}")
+        print(f"\nRegistered Datasets: {len(registry_dict)}")
+        for name, dataset_id in sorted(registry_dict.items(), key=lambda x: x[1]):
+            print(f"  ID {dataset_id}: {name}")
+    except Exception as e:
+        print(f"\nCould not load dataset registry: {e}")
+        print("This is optional and doesn't affect functionality.")
 
 
 def main():
