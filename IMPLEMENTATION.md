@@ -430,6 +430,51 @@ examples/                    # Working examples + API server
 
 ---
 
+## End-to-End Testing Tools
+
+**New Scripts Added (2025-10-28):**
+
+1. **[examples/e2e_test.py](examples/e2e_test.py)** - Comprehensive end-to-end testing
+   - Supports HuggingFace and local file ingestion
+   - Runs full pipeline: ingest → build → query → validate
+   - Interactive API server launcher
+   - Validation checks for correctness
+
+2. **[examples/inspect_data.py](examples/inspect_data.py)** - Data inspection utility
+   - Shows storage and index statistics
+   - Displays sample data and domains
+   - Query specific domains
+   - Reports dataset registry
+
+3. **[E2E_TESTING.md](E2E_TESTING.md)** - Complete testing guide
+   - Step-by-step instructions
+   - Command-line options reference
+   - Troubleshooting tips
+   - Performance guidance
+
+4. **[QUICKSTART.md](QUICKSTART.md)** - Quick reference guide
+   - 5-minute getting started
+   - Common commands
+   - Example workflows
+
+**Usage:**
+
+```bash
+# Test with your HuggingFace dataset
+python examples/e2e_test.py --dataset reddit --source huggingface --username nhagar
+
+# Test with local file
+python examples/e2e_test.py --dataset my_data --source local --file urls.csv
+
+# Inspect existing data
+python examples/inspect_data.py
+
+# Query specific domain
+python examples/inspect_data.py --domain example.com
+```
+
+---
+
 **Last Build:** 164,099 domains indexed in 2.2 seconds
 
 ---
