@@ -371,6 +371,11 @@ Visit `http://localhost:8000/docs` for interactive API documentation.
   - Issue: Query service called `lookup(domain_id, dataset_id)` but method requires `lookup(version, domain_id, dataset_id)`
   - Impact: URL queries would fail with TypeError
   - Fix: Pass version from loader's `_current_version.version` as first argument
+- ✅ **P0:** Postings shard path resolution in loader (fixed 2025-10-27)
+  - Issue: `IndexLoader` instantiated `PostingsIndex` with `base_path/index/{version}`, duplicating the version when `lookup()`
+    constructed shard paths
+  - Impact: All postings lookups read from non-existent directories, yielding zero results for every domain/dataset
+  - Fix: Initialize `PostingsIndex` with the storage root (`base_path`) so shard paths resolve to `index/{version}/postings/...`
 - ✅ **P1:** File registry CSV serialization bug (fixed 2025-10-24)
   - Issue: `df.write_csv()` returns None, causing AttributeError
   - Fix: Use StringIO buffer to capture CSV output
