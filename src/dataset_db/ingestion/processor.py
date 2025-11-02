@@ -125,11 +125,6 @@ class IngestionProcessor:
 
         result_df = pl.DataFrame(normalized_records)
 
-        # Persist seen URL IDs now that the batch succeeded
-        self.duplicate_tracker.record_batch(
-            dataset_name, (record["url_id"] for record in normalized_records)
-        )
-
         # Ensure correct types
         result_df = result_df.with_columns([
             pl.col("dataset_id").cast(pl.Int32),
@@ -143,6 +138,20 @@ class IngestionProcessor:
         ])
 
         return result_df
+
+    def mark_ingested(self, dataset_name: str, df: pl.DataFrame) -> None:
+        """Record URL IDs for a successfully ingested batch."""
+
+        if df.height == 0:
+            return
+
+        if "url_id" not in df.columns:
+            raise ValueError("DataFrame is missing required 'url_id' column")
+
+        self.duplicate_tracker.record_batch(
+            dataset_name,
+            df.get_column("url_id").to_list(),
+        )
 
     def _empty_dataframe(self) -> pl.DataFrame:
         """Create empty DataFrame with correct schema."""

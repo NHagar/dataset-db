@@ -212,6 +212,8 @@ class TestIngestionProcessor:
         first = processor.process_batch(batch, "dataset1")
         assert len(first) == 1
 
+        processor.mark_ingested("dataset1", first)
+
         second = processor.process_batch(batch, "dataset1")
         assert len(second) == 0
 
@@ -226,6 +228,8 @@ class TestIngestionProcessor:
         )
         first = processor1.process_batch(pl.DataFrame({"url": [url]}), "dataset1")
         assert len(first) == 1
+
+        processor1.mark_ingested("dataset1", first)
 
         processor2 = IngestionProcessor(
             duplicate_tracker=DuplicateTracker(base_path=tracker_path)

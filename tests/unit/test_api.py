@@ -56,6 +56,9 @@ def test_data_path():
 
         writer.flush()
 
+        processor.mark_ingested("test_dataset_1", normalized)
+        processor.mark_ingested("test_dataset_2", normalized2)
+
         # Build indexes
         builder = IndexBuilder(base_path=base_path)
         builder.build_all()

@@ -54,6 +54,7 @@ def test_incremental_file_registry(test_data_dir, sample_urls_batch1, sample_url
     normalized1 = processor.process_batch(sample_urls_batch1, "dataset1")
     writer.write_batch(normalized1)
     writer.flush()
+    processor.mark_ingested("dataset1", normalized1)
 
     # Build initial indexes
     builder = IndexBuilder(test_data_dir)
@@ -67,6 +68,7 @@ def test_incremental_file_registry(test_data_dir, sample_urls_batch1, sample_url
     normalized2 = processor.process_batch(sample_urls_batch2, "dataset2")
     writer.write_batch(normalized2)
     writer.flush()
+    processor.mark_ingested("dataset2", normalized2)
 
     # Build incremental indexes
     # Need to create a new builder to avoid reusing the same instance
@@ -90,6 +92,7 @@ def test_incremental_domain_dict(test_data_dir, sample_urls_batch1, sample_urls_
     normalized1 = processor.process_batch(sample_urls_batch1, "dataset1")
     writer.write_batch(normalized1)
     writer.flush()
+    processor.mark_ingested("dataset1", normalized1)
 
     # Build initial indexes
     builder = IndexBuilder(test_data_dir)
@@ -103,6 +106,7 @@ def test_incremental_domain_dict(test_data_dir, sample_urls_batch1, sample_urls_
     normalized2 = processor.process_batch(sample_urls_batch2, "dataset2")
     writer.write_batch(normalized2)
     writer.flush()
+    processor.mark_ingested("dataset2", normalized2)
 
     # Build incremental indexes
     builder2 = IndexBuilder(test_data_dir)
@@ -134,6 +138,7 @@ def test_incremental_membership(test_data_dir, sample_urls_batch1, sample_urls_b
     normalized1 = processor.process_batch(sample_urls_batch1, "dataset1")
     writer.write_batch(normalized1)
     writer.flush()
+    processor.mark_ingested("dataset1", normalized1)
 
     # Build initial indexes
     builder = IndexBuilder(test_data_dir)
@@ -157,6 +162,7 @@ def test_incremental_membership(test_data_dir, sample_urls_batch1, sample_urls_b
     normalized2 = processor.process_batch(sample_urls_batch2, "dataset2")
     writer.write_batch(normalized2)
     writer.flush()
+    processor.mark_ingested("dataset2", normalized2)
 
     # Build incremental indexes
     builder2 = IndexBuilder(test_data_dir)
@@ -190,6 +196,7 @@ def test_incremental_no_new_files(test_data_dir, sample_urls_batch1):
     normalized1 = processor.process_batch(sample_urls_batch1, "dataset1")
     writer.write_batch(normalized1)
     writer.flush()
+    processor.mark_ingested("dataset1", normalized1)
 
     # Build initial indexes
     builder = IndexBuilder(test_data_dir)
@@ -251,6 +258,7 @@ def test_domain_id_stability(test_data_dir):
     normalized1 = processor.process_batch(batch1, "dataset1")
     writer.write_batch(normalized1)
     writer.flush()
+    processor.mark_ingested("dataset1", normalized1)
 
     builder1 = IndexBuilder(test_data_dir)
     version1 = builder1.build_all()
@@ -276,6 +284,7 @@ def test_domain_id_stability(test_data_dir):
     normalized2 = processor.process_batch(batch2, "dataset2")
     writer.write_batch(normalized2)
     writer.flush()
+    processor.mark_ingested("dataset2", normalized2)
 
     # Build incrementally
     builder2 = IndexBuilder(test_data_dir)
