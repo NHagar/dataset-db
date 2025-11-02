@@ -219,6 +219,7 @@ class SimpleMPHF:
 
         # Parse hash map
         self.hash_to_id = {}
+        self.domain_to_id = {}
         for _ in range(num_domains - num_collisions):
             hash_val = struct.unpack("<Q", data[offset : offset + 8])[0]
             offset += 8
@@ -262,7 +263,7 @@ class SimpleMPHF:
             ]  # Store first entry in hash_to_id
 
         logger.info(
-            f"Loaded MPHF: {len(self.domain_to_id)} domains, "
+            f"Loaded MPHF: {num_domains} domains, "
             f"{len(self.collision_map)} hash collisions"
         )
 

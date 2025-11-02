@@ -477,6 +477,9 @@ python examples/inspect_data.py --domain example.com
 
 **Last Build:** 164,099 domains indexed in 2.2 seconds
 
+### 2024-11-20
+- Fixed MPHF loader to reset `domain_to_id` and log the stored domain count from the file header. Prevents misleading "0 domains" messages when loading persisted MPHFs.
+
 ---
 
 ## Milestone 5: Incremental Updates (In Progress)
