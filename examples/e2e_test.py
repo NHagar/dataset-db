@@ -90,13 +90,15 @@ def ingest_huggingface(dataset_name: str, username: str = "nhagar", suffix: str 
 
         # Flush remaining data
         flush_result = writer.flush()
-        total_rows += flush_result["rows_written"]
+        writer_stats = writer.get_stats()
 
         elapsed = time.time() - start_time
 
         # Print summary
         print_subsection("Ingestion Summary")
-        print(f"Total rows: {total_rows:,}")
+        print(f"Total rows processed: {total_rows:,}")
+        print(f"Rows written to disk: {writer_stats['rows_written']:,}")
+        print(f"Final flush wrote: {flush_result['rows_written']:,} rows")
         print(f"Batches processed: {batch_count}")
         print(f"Time elapsed: {elapsed:.2f}s")
         print(f"Throughput: {total_rows / elapsed:,.0f} rows/sec")
@@ -177,13 +179,15 @@ def ingest_local(dataset_name: str, file_path: Path):
 
         # Flush remaining data
         flush_result = writer.flush()
-        total_rows += flush_result["rows_written"]
+        writer_stats = writer.get_stats()
 
         elapsed = time.time() - start_time
 
         # Print summary
         print_subsection("Ingestion Summary")
-        print(f"Total rows: {total_rows:,}")
+        print(f"Total rows processed: {total_rows:,}")
+        print(f"Rows written to disk: {writer_stats['rows_written']:,}")
+        print(f"Final flush wrote: {flush_result['rows_written']:,} rows")
         print(f"Batches processed: {batch_count}")
         print(f"Time elapsed: {elapsed:.2f}s")
         print(f"Throughput: {total_rows / elapsed:,.0f} rows/sec")

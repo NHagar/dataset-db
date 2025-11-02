@@ -75,6 +75,7 @@ class ParquetWriter:
         # Partition buffers: {(dataset_id, domain_prefix): [DataFrames]}
         self._partition_buffers: dict[tuple[int, str], list[pl.DataFrame]] = {}
         self._partition_buffer_sizes: dict[tuple[int, str], int] = {}
+        self._partition_buffer_rows: dict[tuple[int, str], int] = {}
 
         # Statistics tracking
         self._stats = {
@@ -165,15 +166,18 @@ class ParquetWriter:
 
             # Add to partition buffer
             partition_key = (ds_id, domain_prefix)
+            previous_buffer_rows = self._partition_buffer_rows.get(partition_key, 0)
             if partition_key not in self._partition_buffers:
                 self._partition_buffers[partition_key] = []
                 self._partition_buffer_sizes[partition_key] = 0
+                self._partition_buffer_rows[partition_key] = 0
 
             self._partition_buffers[partition_key].append(write_df)
 
             # Estimate buffer size (approximate uncompressed bytes)
             buffer_size = write_df.to_arrow().nbytes
             self._partition_buffer_sizes[partition_key] += buffer_size
+            self._partition_buffer_rows[partition_key] += write_df.height
 
             # Flush if buffer exceeds threshold and auto_flush is enabled
             # partition_buffer_size=0 means immediate writes (no buffering)
@@ -183,7 +187,10 @@ class ParquetWriter:
             ):
                 flush_result = self._flush_partition(ds_id, domain_prefix)
                 files_written += flush_result["files_written"]
-                rows_flushed += flush_result["rows_written"]
+                rows_from_current_batch = flush_result["rows_written"] - previous_buffer_rows
+                if rows_from_current_batch < 0:
+                    rows_from_current_batch = flush_result["rows_written"]
+                rows_flushed += rows_from_current_batch
             else:
                 # Rows were buffered, not flushed
                 rows_buffered += write_df.height
@@ -271,6 +278,8 @@ class ParquetWriter:
         # Clear buffer
         del self._partition_buffers[partition_key]
         del self._partition_buffer_sizes[partition_key]
+        if partition_key in self._partition_buffer_rows:
+            del self._partition_buffer_rows[partition_key]
 
         # Update stats
         self._stats["rows_written"] += rows_written
