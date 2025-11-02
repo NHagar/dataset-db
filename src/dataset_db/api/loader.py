@@ -85,8 +85,13 @@ class IndexLoader:
         logger.info("Loaded file registry")
 
         # Load postings index (will lazy-load shards)
-        postings_base = self.base_path / "index" / self._current_version.version
-        self._postings = PostingsIndex(base_path=postings_base, num_shards=1024)
+        #
+        # Note: PostingsIndex expects the *root* data directory so it can
+        # construct the canonical layout (index/{version}/postings/...).
+        # Passing the version-specific path would result in duplicated
+        # segments (index/{version}/index/{version}/...), so we keep the base
+        # directory here and supply the version at lookup time.
+        self._postings = PostingsIndex(base_path=self.base_path, num_shards=1024)
         logger.info("Postings index ready (shards will be lazy-loaded)")
 
         logger.info("All indexes loaded successfully")
