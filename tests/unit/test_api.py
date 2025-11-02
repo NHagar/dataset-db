@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from dataset_db.api import QueryService, init_loader
 from dataset_db.api.loader import IndexLoader
 from dataset_db.index import IndexBuilder
-from dataset_db.ingestion import IngestionProcessor
+from dataset_db.ingestion import DuplicateTracker, IngestionProcessor
 from dataset_db.storage import ParquetWriter
 
 
@@ -25,7 +25,8 @@ def test_data_path():
         base_path = Path(tmpdir)
 
         # Create test data
-        processor = IngestionProcessor()
+        tracker = DuplicateTracker(base_path=base_path / "tracker_state")
+        processor = IngestionProcessor(duplicate_tracker=tracker)
         writer = ParquetWriter(base_path=base_path)
 
         # Add some test URLs from different domains
@@ -54,6 +55,9 @@ def test_data_path():
         writer.write_batch(normalized2)
 
         writer.flush()
+
+        processor.mark_ingested("test_dataset_1", normalized)
+        processor.mark_ingested("test_dataset_2", normalized2)
 
         # Build indexes
         builder = IndexBuilder(base_path=base_path)

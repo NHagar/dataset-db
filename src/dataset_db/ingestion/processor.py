@@ -11,6 +11,8 @@ import polars as pl
 from dataset_db.config import get_config
 from dataset_db.normalization import IDGenerator, URLNormalizer
 
+from .duplicate_tracker import DuplicateTracker
+
 
 class IngestionProcessor:
     """
@@ -24,6 +26,7 @@ class IngestionProcessor:
         self,
         normalizer: Optional[URLNormalizer] = None,
         id_generator: Optional[IDGenerator] = None,
+        duplicate_tracker: Optional[DuplicateTracker] = None,
     ):
         """
         Initialize ingestion processor.
@@ -31,10 +34,14 @@ class IngestionProcessor:
         Args:
             normalizer: URL normalizer instance (creates new if None)
             id_generator: ID generator instance (creates new if None)
+            duplicate_tracker: Tracker for ingestion-level deduplication. If not
+                provided, a new tracker scoped to the configured storage path is
+                created.
         """
         self.normalizer = normalizer or URLNormalizer()
         self.id_generator = id_generator or IDGenerator()
         self.config = get_config()
+        self.duplicate_tracker = duplicate_tracker or DuplicateTracker()
 
     def process_batch(
         self, df: pl.DataFrame, dataset_name: str
@@ -68,6 +75,8 @@ class IngestionProcessor:
         # Process each URL through normalizer
         normalized_records = []
 
+        batch_seen: set[int] = set()
+
         for row in df.iter_rows(named=True):
             raw_url = row.get("url", "")
 
@@ -80,6 +89,14 @@ class IngestionProcessor:
                 # Generate IDs
                 url_id = self.id_generator.get_url_id(raw_url)
                 domain_id = self.id_generator.get_domain_id(norm.domain)
+
+                if url_id in batch_seen:
+                    continue
+
+                if self.duplicate_tracker.is_duplicate(dataset_name, url_id):
+                    continue
+
+                batch_seen.add(url_id)
 
                 normalized_records.append({
                     "dataset_id": dataset_id,
@@ -121,6 +138,20 @@ class IngestionProcessor:
         ])
 
         return result_df
+
+    def mark_ingested(self, dataset_name: str, df: pl.DataFrame) -> None:
+        """Record URL IDs for a successfully ingested batch."""
+
+        if df.height == 0:
+            return
+
+        if "url_id" not in df.columns:
+            raise ValueError("DataFrame is missing required 'url_id' column")
+
+        self.duplicate_tracker.record_batch(
+            dataset_name,
+            df.get_column("url_id").to_list(),
+        )
 
     def _empty_dataframe(self) -> pl.DataFrame:
         """Create empty DataFrame with correct schema."""

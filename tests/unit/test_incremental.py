@@ -7,7 +7,7 @@ import polars as pl
 import pytest
 
 from dataset_db.index import IndexBuilder
-from dataset_db.ingestion import IngestionProcessor
+from dataset_db.ingestion import DuplicateTracker, IngestionProcessor
 from dataset_db.storage import ParquetWriter
 
 
@@ -47,12 +47,14 @@ def sample_urls_batch2():
 def test_incremental_file_registry(test_data_dir, sample_urls_batch1, sample_urls_batch2):
     """Test incremental file registry building."""
     # Ingest first batch
-    processor = IngestionProcessor()
+    tracker = DuplicateTracker(base_path=test_data_dir / "tracker_state")
+    processor = IngestionProcessor(duplicate_tracker=tracker)
     writer = ParquetWriter(base_path=test_data_dir)
 
     normalized1 = processor.process_batch(sample_urls_batch1, "dataset1")
     writer.write_batch(normalized1)
     writer.flush()
+    processor.mark_ingested("dataset1", normalized1)
 
     # Build initial indexes
     builder = IndexBuilder(test_data_dir)
@@ -66,6 +68,7 @@ def test_incremental_file_registry(test_data_dir, sample_urls_batch1, sample_url
     normalized2 = processor.process_batch(sample_urls_batch2, "dataset2")
     writer.write_batch(normalized2)
     writer.flush()
+    processor.mark_ingested("dataset2", normalized2)
 
     # Build incremental indexes
     # Need to create a new builder to avoid reusing the same instance
@@ -82,12 +85,14 @@ def test_incremental_file_registry(test_data_dir, sample_urls_batch1, sample_url
 def test_incremental_domain_dict(test_data_dir, sample_urls_batch1, sample_urls_batch2):
     """Test incremental domain dictionary building."""
     # Ingest first batch
-    processor = IngestionProcessor()
+    tracker = DuplicateTracker(base_path=test_data_dir / "tracker_state")
+    processor = IngestionProcessor(duplicate_tracker=tracker)
     writer = ParquetWriter(base_path=test_data_dir)
 
     normalized1 = processor.process_batch(sample_urls_batch1, "dataset1")
     writer.write_batch(normalized1)
     writer.flush()
+    processor.mark_ingested("dataset1", normalized1)
 
     # Build initial indexes
     builder = IndexBuilder(test_data_dir)
@@ -101,6 +106,7 @@ def test_incremental_domain_dict(test_data_dir, sample_urls_batch1, sample_urls_
     normalized2 = processor.process_batch(sample_urls_batch2, "dataset2")
     writer.write_batch(normalized2)
     writer.flush()
+    processor.mark_ingested("dataset2", normalized2)
 
     # Build incremental indexes
     builder2 = IndexBuilder(test_data_dir)
@@ -125,12 +131,14 @@ def test_incremental_domain_dict(test_data_dir, sample_urls_batch1, sample_urls_
 def test_incremental_membership(test_data_dir, sample_urls_batch1, sample_urls_batch2):
     """Test incremental membership index building."""
     # Ingest first batch
-    processor = IngestionProcessor()
+    tracker = DuplicateTracker(base_path=test_data_dir / "tracker_state")
+    processor = IngestionProcessor(duplicate_tracker=tracker)
     writer = ParquetWriter(base_path=test_data_dir)
 
     normalized1 = processor.process_batch(sample_urls_batch1, "dataset1")
     writer.write_batch(normalized1)
     writer.flush()
+    processor.mark_ingested("dataset1", normalized1)
 
     # Build initial indexes
     builder = IndexBuilder(test_data_dir)
@@ -154,6 +162,7 @@ def test_incremental_membership(test_data_dir, sample_urls_batch1, sample_urls_b
     normalized2 = processor.process_batch(sample_urls_batch2, "dataset2")
     writer.write_batch(normalized2)
     writer.flush()
+    processor.mark_ingested("dataset2", normalized2)
 
     # Build incremental indexes
     builder2 = IndexBuilder(test_data_dir)
@@ -180,12 +189,14 @@ def test_incremental_membership(test_data_dir, sample_urls_batch1, sample_urls_b
 def test_incremental_no_new_files(test_data_dir, sample_urls_batch1):
     """Test incremental build when there are no new files."""
     # Ingest first batch
-    processor = IngestionProcessor()
+    tracker = DuplicateTracker(base_path=test_data_dir / "tracker_state")
+    processor = IngestionProcessor(duplicate_tracker=tracker)
     writer = ParquetWriter(base_path=test_data_dir)
 
     normalized1 = processor.process_batch(sample_urls_batch1, "dataset1")
     writer.write_batch(normalized1)
     writer.flush()
+    processor.mark_ingested("dataset1", normalized1)
 
     # Build initial indexes
     builder = IndexBuilder(test_data_dir)
@@ -201,7 +212,8 @@ def test_incremental_no_new_files(test_data_dir, sample_urls_batch1):
 def test_incremental_first_build(test_data_dir, sample_urls_batch1):
     """Test incremental build when there is no previous version."""
     # Ingest first batch
-    processor = IngestionProcessor()
+    tracker = DuplicateTracker(base_path=test_data_dir / "tracker_state")
+    processor = IngestionProcessor(duplicate_tracker=tracker)
     writer = ParquetWriter(base_path=test_data_dir)
 
     normalized1 = processor.process_batch(sample_urls_batch1, "dataset1")
@@ -229,7 +241,8 @@ def test_domain_id_stability(test_data_dir):
     existing domain IDs must not change. New domains should be appended
     to the end of the domain list.
     """
-    processor = IngestionProcessor()
+    tracker = DuplicateTracker(base_path=test_data_dir / "tracker_state")
+    processor = IngestionProcessor(duplicate_tracker=tracker)
     writer = ParquetWriter(base_path=test_data_dir)
 
     # Phase 1: Initial build with domains that will sort in middle
@@ -245,6 +258,7 @@ def test_domain_id_stability(test_data_dir):
     normalized1 = processor.process_batch(batch1, "dataset1")
     writer.write_batch(normalized1)
     writer.flush()
+    processor.mark_ingested("dataset1", normalized1)
 
     builder1 = IndexBuilder(test_data_dir)
     version1 = builder1.build_all()
@@ -270,6 +284,7 @@ def test_domain_id_stability(test_data_dir):
     normalized2 = processor.process_batch(batch2, "dataset2")
     writer.write_batch(normalized2)
     writer.flush()
+    processor.mark_ingested("dataset2", normalized2)
 
     # Build incrementally
     builder2 = IndexBuilder(test_data_dir)
