@@ -99,7 +99,6 @@ def example_multiple_datasets():
     }
 
     total_rows = 0
-    total_files = 0
 
     for dataset_name, urls in datasets.items():
         print(f"\n--- Processing: {dataset_name} ---")
@@ -118,7 +117,6 @@ def example_multiple_datasets():
         result = writer.write_batch(normalized_df)
 
         total_rows += result["total_rows_processed"]
-        total_files += result["files_written"]
 
         print(f"Processed {result['total_rows_processed']} rows: "
               f"buffered={result['rows_buffered']}, flushed={result['rows_flushed']} "
@@ -129,8 +127,10 @@ def example_multiple_datasets():
     print(f"\nFinal flush: {flush_result['rows_written']} rows to {flush_result['files_written']} files")
 
     print("\n--- Summary ---")
-    print(f"Total rows written: {total_rows + flush_result['rows_written']}")
-    print(f"Total files created: {total_files + flush_result['files_written']}")
+    writer_stats = writer.get_stats()
+    print(f"Total rows processed: {total_rows}")
+    print(f"Rows written to disk: {writer_stats['rows_written']}")
+    print(f"Total files created: {writer_stats['files_created']}")
     print("\nStorage stats:")
 
     storage_stats = writer.get_storage_stats()
@@ -287,10 +287,11 @@ def main():
                 )
 
             # Flush any remaining buffered data
-            flush_result = writer.flush()
-            total_rows += flush_result["rows_written"]
+            writer.flush()
+            writer_stats = writer.get_stats()
 
-            print(f"\nTotal: {total_rows} rows in {batch_count} batches")
+            print(f"\nTotal processed: {total_rows} rows in {batch_count} batches")
+            print(f"Rows written to disk: {writer_stats['rows_written']}")
             print(f"Storage stats: {writer.get_storage_stats()}")
 
         except Exception as e:
