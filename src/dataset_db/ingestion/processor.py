@@ -66,8 +66,6 @@ class IngestionProcessor:
         # Process each URL through normalizer
         normalized_records = []
 
-        batch_seen: set[int] = set()
-
         for row in df.iter_rows(named=True):
             raw_url = row.get("url", "")
 
@@ -80,11 +78,6 @@ class IngestionProcessor:
                 # Generate IDs
                 url_id = self.id_generator.get_url_id(raw_url)
                 domain_id = self.id_generator.get_domain_id(norm.domain)
-
-                if url_id in batch_seen:
-                    continue
-
-                batch_seen.add(url_id)
 
                 normalized_records.append(
                     {

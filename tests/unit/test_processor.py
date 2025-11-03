@@ -85,15 +85,16 @@ class TestIngestionProcessor:
         assert result1["dataset_id"][0] == result3["dataset_id"][0]
 
     def test_process_batch_url_id_consistent(self, processor):
-        """Test URL IDs remain deterministic while skipping duplicates."""
+        """Test URL IDs remain deterministic and duplicates are preserved."""
         url = "https://example.com/path"
         input_df = pl.DataFrame({"url": [url, url]})
 
         result = processor.process_batch(input_df, "test_dataset")
 
-        # Duplicate URLs within the same batch are skipped entirely
-        assert len(result) == 1
+        # Duplicate URLs are preserved - deduplication happens at query time
+        assert len(result) == 2
         assert result["url_id"][0] == processor.id_generator.get_url_id(url)
+        assert result["url_id"][1] == processor.id_generator.get_url_id(url)
 
     def test_process_batch_domain_id_consistent(self, processor):
         """Test domain IDs are consistent for same domain."""
