@@ -60,8 +60,10 @@ def example_basic_write():
     # Flush any remaining buffered data
     flush_result = writer.flush()
 
-    print(f"\nBatch result: processed={result['total_rows_processed']}, "
-          f"buffered={result['rows_buffered']}, flushed={result['rows_flushed']}")
+    print(
+        f"\nBatch result: processed={result['total_rows_processed']}, "
+        f"buffered={result['rows_buffered']}, flushed={result['rows_flushed']}"
+    )
     print(f"Flush result: {flush_result['rows_written']} rows written")
     print(f"Writer stats: {writer.get_stats()}")
     print(f"Storage stats: {writer.get_storage_stats()}")
@@ -118,13 +120,17 @@ def example_multiple_datasets():
 
         total_rows += result["total_rows_processed"]
 
-        print(f"Processed {result['total_rows_processed']} rows: "
-              f"buffered={result['rows_buffered']}, flushed={result['rows_flushed']} "
-              f"({result['files_written']} files)")
+        print(
+            f"Processed {result['total_rows_processed']} rows: "
+            f"buffered={result['rows_buffered']}, flushed={result['rows_flushed']} "
+            f"({result['files_written']} files)"
+        )
 
     # Flush any remaining buffered data
     flush_result = writer.flush()
-    print(f"\nFinal flush: {flush_result['rows_written']} rows to {flush_result['files_written']} files")
+    print(
+        f"\nFinal flush: {flush_result['rows_written']} rows to {flush_result['files_written']} files"
+    )
 
     print("\n--- Summary ---")
     writer_stats = writer.get_stats()
@@ -242,7 +248,7 @@ def example_streaming_ingestion():
     processor = IngestionProcessor()
     writer = ParquetWriter(base_path=Path("./data"))
 
-    for batch_df in loader.load("dataset_name", streaming=True):
+    for batch_df in loader.load("dataset_name"):
         normalized_df = processor.process_batch(batch_df, "dataset_name")
         result = writer.write_batch(normalized_df)
         print(f"Wrote batch: {result['rows_written']} rows")
@@ -273,7 +279,7 @@ def main():
             batch_count = 0
             total_rows = 0
 
-            for batch_df in loader.load(args.with_hf, streaming=True):
+            for batch_df in loader.load(args.with_hf):
                 normalized_df = processor.process_batch(batch_df, args.with_hf)
                 result = writer.write_batch(normalized_df)
 
