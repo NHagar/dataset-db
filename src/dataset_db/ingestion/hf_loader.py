@@ -45,7 +45,6 @@ class HuggingFaceLoader:
         self,
         dataset_name: str,
         split: str = "train",
-        streaming: bool = True,
     ) -> Iterator[pl.DataFrame]:
         """
         Load a dataset from HuggingFace Hub.
@@ -53,7 +52,6 @@ class HuggingFaceLoader:
         Args:
             dataset_name: Dataset name (without username prefix or suffix)
             split: Dataset split to load (default: 'train')
-            streaming: Use streaming mode (default: True for large datasets)
 
         Yields:
             Polars DataFrames with batches of data
@@ -69,16 +67,11 @@ class HuggingFaceLoader:
             dataset = load_dataset(
                 full_name,
                 split=split,
-                streaming=streaming,
+                streaming=True,
             )
 
-            if streaming:
-                # Yield batches from streaming dataset
-                yield from self._stream_batches(dataset, batch_size=self.batch_size)
-            else:
-                # Convert entire dataset to Polars DataFrame
-                df = pl.from_arrow(dataset.data.table)
-                yield df
+            # Yield batches from streaming dataset
+            yield from self._stream_batches(dataset, batch_size=self.batch_size)
 
         except Exception as e:
             raise ValueError(f"Failed to load dataset '{full_name}': {e}")
@@ -109,47 +102,6 @@ class HuggingFaceLoader:
         if batch:
             df = pl.DataFrame(batch)
             yield df
-
-    def load_parquet_files(
-        self, dataset_name: str, cache_dir: Optional[str] = None
-    ) -> list[str]:
-        """
-        Load dataset and get paths to cached Parquet files.
-
-        This is useful when you want to work directly with Parquet files
-        instead of streaming records.
-
-        Args:
-            dataset_name: Dataset name (without username prefix or suffix)
-            cache_dir: Optional cache directory
-
-        Returns:
-            List of paths to Parquet files
-
-        Raises:
-            ValueError: If dataset cannot be loaded
-        """
-        full_name = f"{self.username}/{dataset_name}{self.suffix}"
-
-        try:
-            # Load dataset (non-streaming to get all files)
-            dataset = load_dataset(
-                full_name,
-                split="train",
-                streaming=False,
-                cache_dir=cache_dir,
-            )
-
-            # Get Parquet file paths from cache
-            # HuggingFace datasets are stored as Arrow/Parquet files
-            if hasattr(dataset, "cache_files"):
-                return [f["filename"] for f in dataset.cache_files]
-
-            # Fallback: dataset might not have cache_files attribute
-            return []
-
-        except Exception as e:
-            raise ValueError(f"Failed to load dataset '{full_name}': {e}")
 
     def validate_schema(self, df: pl.DataFrame) -> bool:
         """
