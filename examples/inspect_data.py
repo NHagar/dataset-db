@@ -13,7 +13,6 @@ import argparse
 import sys
 from pathlib import Path
 
-import polars as pl
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -36,18 +35,18 @@ def inspect_storage():
         print("Run ingestion first: python examples/e2e_test.py --dataset <name> --source <source>")
         return False
 
-    print(f"\nStorage Statistics:")
+    print("\nStorage Statistics:")
     print(f"  Total files: {stats['total_files']}")
     print(f"  Total partitions: {stats['total_partitions']}")
     print(f"  Total size: {stats['total_size_bytes']:,} bytes ({stats['total_size_bytes'] / 1024 / 1024:.2f} MB)")
 
     # Show datasets
-    print(f"\nDatasets:")
+    print("\nDatasets:")
     for ds in stats["datasets"]:
         print(f"  Dataset {ds['dataset_id']}: {ds['partitions']} partitions, {ds['files']} files")
 
     # Show sample data
-    print(f"\nSample Data:")
+    print("\nSample Data:")
     writer = ParquetWriter(base_path=base_path)
     partitions = layout.list_partitions()
 
@@ -89,7 +88,7 @@ def inspect_indexes():
     current = manifest.get_current_version()
 
     print(f"\nCurrent Version: {current.version}")
-    print(f"\nIndex Files:")
+    print("\nIndex Files:")
     print(f"  Domain dictionary: {current.domains_txt}")
     print(f"  Domain MPHF: {current.domains_mphf}")
     print(f"  Membership index: {current.d2d_roar}")
@@ -103,11 +102,11 @@ def inspect_indexes():
     domains_text = decompressed_data.decode("utf-8")
     domains = [line for line in domains_text.split("\n") if line]
 
-    print(f"\nDomain Statistics:")
+    print("\nDomain Statistics:")
     print(f"  Total domains: {len(domains):,}")
 
     # Show sample domains
-    print(f"\nSample Domains (first 10):")
+    print("\nSample Domains (first 10):")
     for i, domain in enumerate(domains[:10]):
         print(f"  {i+1}. {domain}")
 
@@ -115,11 +114,11 @@ def inspect_indexes():
     membership = MembershipIndex(base_path)
     membership.load(base_path / current.d2d_roar, len(domains))
 
-    print(f"\nMembership Statistics:")
+    print("\nMembership Statistics:")
     print(f"  Domain-to-dataset mappings: {len(membership.domain_bitmaps):,}")
 
     # Show some membership info
-    print(f"\nSample Memberships:")
+    print("\nSample Memberships:")
     for i, (domain_id, bitmap) in enumerate(list(membership.domain_bitmaps.items())[:5]):
         dataset_ids = list(bitmap)
         if i < len(domains):
@@ -171,7 +170,7 @@ def query_domain(domain: str):
             print(f"    Estimated URLs: {ds.url_count_est or 'unknown'}")
 
             # Get sample URLs
-            print(f"    Sample URLs:")
+            print("    Sample URLs:")
             urls_result = query_service.get_urls_for_domain_dataset(
                 domain, ds.dataset_id, offset=0, limit=10
             )

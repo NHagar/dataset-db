@@ -33,9 +33,9 @@ import polars as pl
 # Add src to path for direct execution
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from dataset_db.index import IndexBuilder
 from dataset_db.ingestion import HuggingFaceLoader, IngestionProcessor
 from dataset_db.storage import ParquetWriter
-from dataset_db.index import IndexBuilder
 
 
 def print_section(title):
@@ -50,12 +50,14 @@ def print_subsection(title):
     print(f"\n--- {title} ---")
 
 
-def ingest_huggingface(dataset_name: str, username: str = "nhagar", suffix: str = "_urls"):
+def ingest_huggingface(
+    dataset_name: str, username: str = "nhagar", suffix: str = "_urls"
+):
     """Ingest data from HuggingFace dataset."""
     print_section("STEP 1: INGESTING FROM HUGGINGFACE")
 
     print(f"\nDataset: {username}/{dataset_name}{suffix}")
-    print(f"Target: ./data/urls/")
+    print("Target: ./data/urls/")
 
     # Initialize components
     loader = HuggingFaceLoader(username=username, suffix=suffix)
@@ -69,7 +71,7 @@ def ingest_huggingface(dataset_name: str, username: str = "nhagar", suffix: str 
 
     try:
         print("\nStreaming batches...")
-        for batch_df in loader.load(dataset_name, streaming=True):
+        for batch_df in loader.load(dataset_name):
             # Process batch
             normalized_df = processor.process_batch(batch_df, dataset_name)
             result = writer.write_batch(normalized_df)
@@ -104,7 +106,7 @@ def ingest_huggingface(dataset_name: str, username: str = "nhagar", suffix: str 
         print(f"Throughput: {total_rows / elapsed:,.0f} rows/sec")
 
         storage_stats = writer.get_storage_stats()
-        print(f"\nStorage:")
+        print("\nStorage:")
         print(f"  Partitions: {storage_stats['total_partitions']}")
         print(f"  Files: {storage_stats['total_files']}")
         print(f"  Size: {storage_stats['total_size_bytes']:,} bytes")
@@ -123,7 +125,7 @@ def ingest_local(dataset_name: str, file_path: Path):
 
     print(f"\nFile: {file_path}")
     print(f"Dataset name: {dataset_name}")
-    print(f"Target: ./data/urls/")
+    print("Target: ./data/urls/")
 
     # Check file exists
     if not file_path.exists():
@@ -151,7 +153,7 @@ def ingest_local(dataset_name: str, file_path: Path):
 
         # Check for URL column
         if "url" not in df.columns:
-            print(f"\nError: File must have a 'url' column")
+            print("\nError: File must have a 'url' column")
             print(f"Found columns: {df.columns}")
             return False
 
@@ -163,7 +165,7 @@ def ingest_local(dataset_name: str, file_path: Path):
         print(f"\nProcessing in batches of {batch_size:,}...")
 
         for i in range(0, len(df), batch_size):
-            batch_df = df[i:i+batch_size]
+            batch_df = df[i : i + batch_size]
 
             # Process batch
             normalized_df = processor.process_batch(batch_df, dataset_name)
@@ -193,7 +195,7 @@ def ingest_local(dataset_name: str, file_path: Path):
         print(f"Throughput: {total_rows / elapsed:,.0f} rows/sec")
 
         storage_stats = writer.get_storage_stats()
-        print(f"\nStorage:")
+        print("\nStorage:")
         print(f"  Partitions: {storage_stats['total_partitions']}")
         print(f"  Files: {storage_stats['total_files']}")
         print(f"  Size: {storage_stats['total_size_bytes']:,} bytes")
@@ -203,6 +205,7 @@ def ingest_local(dataset_name: str, file_path: Path):
     except Exception as e:
         print(f"\nError during ingestion: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -238,15 +241,16 @@ def build_indexes(incremental: bool = False):
         manifest.load()
         current = manifest.get_current_version()
 
-        print(f"\nIndex files:")
+        print("\nIndex files:")
         print(f"  Domain dictionary: {current.domains_txt}")
         print(f"  Domain MPHF: {current.domains_mphf}")
         print(f"  Membership index: {current.d2d_roar}")
         print(f"  File registry: {current.files_tsv}")
 
         # Show index stats
-        from dataset_db.index import SimpleMPHF, MembershipIndex
         import zstandard as zstd
+
+        from dataset_db.index import MembershipIndex
 
         # Load domain dictionary
         dict_path = base_path / current.domains_txt
@@ -259,7 +263,7 @@ def build_indexes(incremental: bool = False):
         print(f"\nDomains indexed: {len(domains):,}")
 
         # Show sample domains
-        print(f"Sample domains:")
+        print("Sample domains:")
         for i, domain in enumerate(domains[:5]):
             print(f"  {i}: {domain}")
 
@@ -273,6 +277,7 @@ def build_indexes(incremental: bool = False):
     except Exception as e:
         print(f"\nError during index build: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -300,8 +305,9 @@ def test_queries():
         query_service = QueryService(loader)
 
         # Get sample domains
-        from dataset_db.index import Manifest
         import zstandard as zstd
+
+        from dataset_db.index import Manifest
 
         manifest = Manifest(base_path)
         manifest.load()
@@ -343,7 +349,7 @@ def test_queries():
                         for item in urls_result.items[:5]:
                             print(f"      - {item.url}")
             else:
-                print(f"  No data found")
+                print("  No data found")
 
         print_subsection("Query Testing Complete")
         return True
@@ -351,6 +357,7 @@ def test_queries():
     except Exception as e:
         print(f"\nError during query testing: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -364,12 +371,15 @@ def start_api_server():
     print("  GET /v1/domain/{domain}")
     print("  GET /v1/domain/{domain}/datasets/{id}/urls")
     print("\nExample queries:")
-    print('  curl http://localhost:8000/v1/domain/example.com')
-    print('  curl "http://localhost:8000/v1/domain/example.com/datasets/1/urls?limit=10"')
+    print("  curl http://localhost:8000/v1/domain/example.com")
+    print(
+        '  curl "http://localhost:8000/v1/domain/example.com/datasets/1/urls?limit=10"'
+    )
     print("\nPress Ctrl+C to stop the server\n")
 
     try:
         import uvicorn
+
         from dataset_db.api.server import app
 
         uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
@@ -379,6 +389,7 @@ def start_api_server():
     except Exception as e:
         print(f"\nError starting server: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -397,6 +408,7 @@ def validate_implementation():
     checks_total += 1
     print("\n1. Checking Parquet storage...")
     from dataset_db.storage import StorageLayout
+
     layout = StorageLayout(base_path)
     stats = layout.get_stats()
 
@@ -404,7 +416,7 @@ def validate_implementation():
         print(f"   ✓ Found {stats['total_files']} Parquet files")
         checks_passed += 1
     else:
-        print(f"   ✗ No Parquet files found")
+        print("   ✗ No Parquet files found")
 
     # Check 2: Indexes exist
     checks_total += 1
@@ -413,21 +425,23 @@ def validate_implementation():
 
     if manifest_path.exists():
         from dataset_db.index import Manifest
+
         manifest = Manifest(base_path)
         manifest.load()
         current = manifest.get_current_version()
         print(f"   ✓ Found index version: {current.version}")
         checks_passed += 1
     else:
-        print(f"   ✗ No index manifest found")
+        print("   ✗ No index manifest found")
 
     # Check 3: Query service works
     checks_total += 1
     print("\n3. Checking query service...")
 
     try:
-        from dataset_db.api import IndexLoader, QueryService
         import zstandard as zstd
+
+        from dataset_db.api import IndexLoader, QueryService
 
         loader = IndexLoader(base_path)
         loader.load()
@@ -452,7 +466,7 @@ def validate_implementation():
             else:
                 print(f"   ✗ Query returned no results for {test_domain}")
         else:
-            print(f"   ✗ No domains to test")
+            print("   ✗ No domains to test")
     except Exception as e:
         print(f"   ✗ Query service error: {e}")
 
@@ -471,14 +485,16 @@ def validate_implementation():
             if len(df) > 0:
                 # Reconstruct first URL
                 row = df[0]
-                reconstructed = f"{row['scheme'][0]}://{row['host'][0]}{row['path_query'][0]}"
-                print(f"   ✓ URL reconstruction works")
+                reconstructed = (
+                    f"{row['scheme'][0]}://{row['host'][0]}{row['path_query'][0]}"
+                )
+                print("   ✓ URL reconstruction works")
                 print(f"     Example: {reconstructed}")
                 checks_passed += 1
             else:
-                print(f"   ✗ No data in partition")
+                print("   ✗ No data in partition")
         else:
-            print(f"   ✗ No partitions to test")
+            print("   ✗ No partitions to test")
     except Exception as e:
         print(f"   ✗ URL reconstruction error: {e}")
 
@@ -515,45 +531,35 @@ Examples:
 
   # Start API server only
   python examples/e2e_test.py --server-only
-        """
+        """,
     )
 
     parser.add_argument("--dataset", help="Dataset name")
     parser.add_argument(
         "--source",
         choices=["huggingface", "local"],
-        help="Data source (huggingface or local)"
-    )
-    parser.add_argument("--file", type=Path, help="Local file path (for --source local)")
-    parser.add_argument(
-        "--username",
-        default="nhagar",
-        help="HuggingFace username (default: nhagar)"
+        help="Data source (huggingface or local)",
     )
     parser.add_argument(
-        "--suffix",
-        default="_urls",
-        help="HuggingFace dataset suffix (default: _urls)"
+        "--file", type=Path, help="Local file path (for --source local)"
+    )
+    parser.add_argument(
+        "--username", default="nhagar", help="HuggingFace username (default: nhagar)"
+    )
+    parser.add_argument(
+        "--suffix", default="_urls", help="HuggingFace dataset suffix (default: _urls)"
     )
     parser.add_argument(
         "--skip-ingestion",
         action="store_true",
-        help="Skip ingestion, use existing data"
+        help="Skip ingestion, use existing data",
     )
     parser.add_argument(
-        "--incremental",
-        action="store_true",
-        help="Use incremental index build"
+        "--incremental", action="store_true", help="Use incremental index build"
     )
+    parser.add_argument("--validate", action="store_true", help="Run validation checks")
     parser.add_argument(
-        "--validate",
-        action="store_true",
-        help="Run validation checks"
-    )
-    parser.add_argument(
-        "--server-only",
-        action="store_true",
-        help="Only start the API server"
+        "--server-only", action="store_true", help="Only start the API server"
     )
 
     args = parser.parse_args()
@@ -577,9 +583,7 @@ Examples:
     if not args.skip_ingestion:
         if args.source == "huggingface":
             success = ingest_huggingface(
-                args.dataset,
-                username=args.username,
-                suffix=args.suffix
+                args.dataset, username=args.username, suffix=args.suffix
             )
         elif args.source == "local":
             success = ingest_local(args.dataset, args.file)

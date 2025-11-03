@@ -5,6 +5,8 @@ Loads datasets from HuggingFace Hub following the naming convention:
 {username}/{dataset_name}_urls
 """
 
+import json
+from pathlib import Path
 from typing import Iterator, Optional
 
 import polars as pl
@@ -45,7 +47,7 @@ class HuggingFaceLoader:
         self,
         dataset_name: str,
         split: str = "train",
-        streaming: bool = True,
+        resume: bool = True,
     ) -> Iterator[pl.DataFrame]:
         """
         Load a dataset from HuggingFace Hub.
@@ -53,7 +55,7 @@ class HuggingFaceLoader:
         Args:
             dataset_name: Dataset name (without username prefix or suffix)
             split: Dataset split to load (default: 'train')
-            streaming: Use streaming mode (default: True for large datasets)
+            resume: Whether to attempt resume from saved state (default: True)
 
         Yields:
             Polars DataFrames with batches of data
@@ -69,23 +71,90 @@ class HuggingFaceLoader:
             dataset = load_dataset(
                 full_name,
                 split=split,
-                streaming=streaming,
+                streaming=True,
             )
 
-            if streaming:
-                # Yield batches from streaming dataset
-                yield from self._stream_batches(dataset, batch_size=self.batch_size)
-            else:
-                # Convert entire dataset to Polars DataFrame
-                df = pl.from_arrow(dataset.data.table)
-                yield df
+            # Resume from saved state if requested
+            if resume:
+                state_dict = self.load_state_dict(dataset_name)
+                if state_dict is not None:
+                    dataset.load_state_dict(state_dict)
+
+            # Store dataset for state dict access
+            self._current_dataset = dataset
+            self._current_dataset_name = dataset_name
+
+            # Yield batches from streaming dataset
+            yield from self._stream_batches(dataset, batch_size=self.batch_size)
 
         except Exception as e:
             raise ValueError(f"Failed to load dataset '{full_name}': {e}")
 
-    def _stream_batches(
-        self, dataset, batch_size: int
-    ) -> Iterator[pl.DataFrame]:
+    def get_state_dict_path(self, dataset_name: str) -> Path:
+        """
+        Get path to state dict file for a dataset.
+
+        Args:
+            dataset_name: Dataset name
+
+        Returns:
+            Path to state dict JSON file
+        """
+        data_dir = self.config.storage.base_path
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / f"{dataset_name}-state-dict.json"
+
+    def load_state_dict(self, dataset_name: str) -> Optional[dict]:
+        """
+        Load state dict if it exists.
+
+        Args:
+            dataset_name: Dataset name
+
+        Returns:
+            State dict or None if file doesn't exist
+        """
+        state_path = self.get_state_dict_path(dataset_name)
+        if state_path.exists():
+            with open(state_path, "r") as f:
+                return json.load(f)
+        return None
+
+    def save_state_dict(self, dataset_name: str) -> None:
+        """
+        Save current dataset state dict to disk.
+
+        This should be called by the consumer after successfully writing data
+        to ensure state is synchronized with persisted data.
+
+        Args:
+            dataset_name: Dataset name
+
+        Raises:
+            RuntimeError: If no dataset is currently loaded
+        """
+        if not hasattr(self, "_current_dataset") or self._current_dataset is None:
+            raise RuntimeError("No dataset currently loaded")
+
+        state_dict = self._current_dataset.state_dict()
+        state_path = self.get_state_dict_path(dataset_name)
+        with open(state_path, "w") as f:
+            json.dump(state_dict, f)
+
+    def clear_state_dict(self, dataset_name: str) -> None:
+        """
+        Delete the state dict file for a dataset.
+
+        This should be called after successful completion of ingestion.
+
+        Args:
+            dataset_name: Dataset name
+        """
+        state_path = self.get_state_dict_path(dataset_name)
+        if state_path.exists():
+            state_path.unlink()
+
+    def _stream_batches(self, dataset, batch_size: int) -> Iterator[pl.DataFrame]:
         """
         Stream batches from HuggingFace dataset.
 
@@ -111,47 +180,6 @@ class HuggingFaceLoader:
         if batch:
             df = pl.DataFrame(batch)
             yield df
-
-    def load_parquet_files(
-        self, dataset_name: str, cache_dir: Optional[str] = None
-    ) -> list[str]:
-        """
-        Load dataset and get paths to cached Parquet files.
-
-        This is useful when you want to work directly with Parquet files
-        instead of streaming records.
-
-        Args:
-            dataset_name: Dataset name (without username prefix or suffix)
-            cache_dir: Optional cache directory
-
-        Returns:
-            List of paths to Parquet files
-
-        Raises:
-            ValueError: If dataset cannot be loaded
-        """
-        full_name = f"{self.username}/{dataset_name}{self.suffix}"
-
-        try:
-            # Load dataset (non-streaming to get all files)
-            dataset = load_dataset(
-                full_name,
-                split="train",
-                streaming=False,
-                cache_dir=cache_dir,
-            )
-
-            # Get Parquet file paths from cache
-            # HuggingFace datasets are stored as Arrow/Parquet files
-            if hasattr(dataset, "cache_files"):
-                return [f["filename"] for f in dataset.cache_files]
-
-            # Fallback: dataset might not have cache_files attribute
-            return []
-
-        except Exception as e:
-            raise ValueError(f"Failed to load dataset '{full_name}': {e}")
 
     def validate_schema(self, df: pl.DataFrame) -> bool:
         """

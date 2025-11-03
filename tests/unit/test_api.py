@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from dataset_db.api import QueryService, init_loader
 from dataset_db.api.loader import IndexLoader
 from dataset_db.index import IndexBuilder
-from dataset_db.ingestion import DuplicateTracker, IngestionProcessor
+from dataset_db.ingestion import IngestionProcessor
 from dataset_db.storage import ParquetWriter
 
 
@@ -25,8 +25,7 @@ def test_data_path():
         base_path = Path(tmpdir)
 
         # Create test data
-        tracker = DuplicateTracker(base_path=base_path / "tracker_state")
-        processor = IngestionProcessor(duplicate_tracker=tracker)
+        processor = IngestionProcessor()
         writer = ParquetWriter(base_path=base_path)
 
         # Add some test URLs from different domains
@@ -55,9 +54,6 @@ def test_data_path():
         writer.write_batch(normalized2)
 
         writer.flush()
-
-        processor.mark_ingested("test_dataset_1", normalized)
-        processor.mark_ingested("test_dataset_2", normalized2)
 
         # Build indexes
         builder = IndexBuilder(base_path=base_path)
@@ -162,7 +158,9 @@ class TestQueryService:
         service = QueryService(loader)
 
         # Get URLs for example.com in dataset 0
-        response = service.get_urls_for_domain_dataset("example.com", dataset_id=0, limit=10)
+        response = service.get_urls_for_domain_dataset(
+            "example.com", dataset_id=0, limit=10
+        )
 
         assert response.domain == "example.com"
         assert response.dataset_id == 0
@@ -183,7 +181,9 @@ class TestQueryService:
         service = QueryService(loader)
 
         # Get first page
-        response1 = service.get_urls_for_domain_dataset("example.com", dataset_id=0, limit=1)
+        response1 = service.get_urls_for_domain_dataset(
+            "example.com", dataset_id=0, limit=1
+        )
         assert len(response1.items) <= 1
 
         # If there are more results, next_offset should be set
@@ -247,6 +247,7 @@ class TestAPIEndpoints:
 
         # Cleanup: reset global loader state
         from dataset_db.api import loader as loader_module
+
         loader_module._loader = None
 
     def test_root_endpoint(self):
@@ -300,7 +301,9 @@ class TestAPIEndpoints:
         assert len(data["items"]) <= 1
 
         # Get with offset
-        response = self.client.get("/v1/domain/example.com/datasets/0/urls?offset=1&limit=1")
+        response = self.client.get(
+            "/v1/domain/example.com/datasets/0/urls?offset=1&limit=1"
+        )
         assert response.status_code == 200
 
     def test_get_urls_invalid_dataset(self):

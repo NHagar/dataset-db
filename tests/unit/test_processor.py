@@ -3,7 +3,7 @@
 import polars as pl
 import pytest
 
-from dataset_db.ingestion import DuplicateTracker, IngestionProcessor
+from dataset_db.ingestion import IngestionProcessor
 from dataset_db.normalization import IDGenerator, URLNormalizer
 
 
@@ -15,11 +15,9 @@ class TestIngestionProcessor:
         """Create a fresh IngestionProcessor instance."""
         normalizer = URLNormalizer()
         id_gen = IDGenerator()
-        tracker = DuplicateTracker(base_path=tmp_path / "tracker_state")
         return IngestionProcessor(
             normalizer=normalizer,
             id_generator=id_gen,
-            duplicate_tracker=tracker,
         )
 
     def test_process_batch_basic(self, processor):
@@ -87,15 +85,16 @@ class TestIngestionProcessor:
         assert result1["dataset_id"][0] == result3["dataset_id"][0]
 
     def test_process_batch_url_id_consistent(self, processor):
-        """Test URL IDs remain deterministic while skipping duplicates."""
+        """Test URL IDs remain deterministic and duplicates are preserved."""
         url = "https://example.com/path"
         input_df = pl.DataFrame({"url": [url, url]})
 
         result = processor.process_batch(input_df, "test_dataset")
 
-        # Duplicate URLs within the same batch are skipped entirely
-        assert len(result) == 1
+        # Duplicate URLs are preserved - deduplication happens at query time
+        assert len(result) == 2
         assert result["url_id"][0] == processor.id_generator.get_url_id(url)
+        assert result["url_id"][1] == processor.id_generator.get_url_id(url)
 
     def test_process_batch_domain_id_consistent(self, processor):
         """Test domain IDs are consistent for same domain."""
@@ -192,48 +191,3 @@ class TestIngestionProcessor:
         assert len(result) == 0
         assert "dataset_id" in result.columns
         assert result.schema["dataset_id"] == pl.Int32
-
-    def test_duplicates_skipped_across_batches(self, tmp_path):
-        """Previously ingested URLs should be skipped in later batches."""
-
-        tracker_path = tmp_path / "tracker_state"
-        normalizer = URLNormalizer()
-        id_gen = IDGenerator()
-
-        processor = IngestionProcessor(
-            normalizer=normalizer,
-            id_generator=id_gen,
-            duplicate_tracker=DuplicateTracker(base_path=tracker_path),
-        )
-
-        url = "https://example.com/path"
-        batch = pl.DataFrame({"url": [url]})
-
-        first = processor.process_batch(batch, "dataset1")
-        assert len(first) == 1
-
-        processor.mark_ingested("dataset1", first)
-
-        second = processor.process_batch(batch, "dataset1")
-        assert len(second) == 0
-
-    def test_duplicates_persist_across_processors(self, tmp_path):
-        """Tracking information survives processor re-instantiation."""
-
-        tracker_path = tmp_path / "tracker_state"
-        url = "https://example.com/path"
-
-        processor1 = IngestionProcessor(
-            duplicate_tracker=DuplicateTracker(base_path=tracker_path)
-        )
-        first = processor1.process_batch(pl.DataFrame({"url": [url]}), "dataset1")
-        assert len(first) == 1
-
-        processor1.mark_ingested("dataset1", first)
-
-        processor2 = IngestionProcessor(
-            duplicate_tracker=DuplicateTracker(base_path=tracker_path)
-        )
-        result = processor2.process_batch(pl.DataFrame({"url": [url]}), "dataset1")
-
-        assert len(result) == 0
