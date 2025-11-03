@@ -11,8 +11,6 @@ import polars as pl
 from dataset_db.config import get_config
 from dataset_db.normalization import IDGenerator, URLNormalizer
 
-from .duplicate_tracker import DuplicateTracker
-
 
 class IngestionProcessor:
     """
@@ -26,7 +24,6 @@ class IngestionProcessor:
         self,
         normalizer: Optional[URLNormalizer] = None,
         id_generator: Optional[IDGenerator] = None,
-        duplicate_tracker: Optional[DuplicateTracker] = None,
     ):
         """
         Initialize ingestion processor.
@@ -34,18 +31,12 @@ class IngestionProcessor:
         Args:
             normalizer: URL normalizer instance (creates new if None)
             id_generator: ID generator instance (creates new if None)
-            duplicate_tracker: Tracker for ingestion-level deduplication. If not
-                provided, a new tracker scoped to the configured storage path is
-                created.
         """
         self.normalizer = normalizer or URLNormalizer()
         self.id_generator = id_generator or IDGenerator()
         self.config = get_config()
-        self.duplicate_tracker = duplicate_tracker or DuplicateTracker()
 
-    def process_batch(
-        self, df: pl.DataFrame, dataset_name: str
-    ) -> pl.DataFrame:
+    def process_batch(self, df: pl.DataFrame, dataset_name: str) -> pl.DataFrame:
         """
         Process a batch of URLs through normalization pipeline.
 
@@ -93,24 +84,23 @@ class IngestionProcessor:
                 if url_id in batch_seen:
                     continue
 
-                if self.duplicate_tracker.is_duplicate(dataset_name, url_id):
-                    continue
-
                 batch_seen.add(url_id)
 
-                normalized_records.append({
-                    "dataset_id": dataset_id,
-                    "domain_id": domain_id,
-                    "url_id": url_id,
-                    "scheme": norm.scheme,
-                    "host": norm.host,
-                    "path_query": norm.get_path_query(),
-                    "domain": norm.domain,
-                    "domain_prefix": self.id_generator.get_domain_prefix(
-                        norm.domain,
-                        self.config.storage.domain_prefix_chars,
-                    ),
-                })
+                normalized_records.append(
+                    {
+                        "dataset_id": dataset_id,
+                        "domain_id": domain_id,
+                        "url_id": url_id,
+                        "scheme": norm.scheme,
+                        "host": norm.host,
+                        "path_query": norm.get_path_query(),
+                        "domain": norm.domain,
+                        "domain_prefix": self.id_generator.get_domain_prefix(
+                            norm.domain,
+                            self.config.storage.domain_prefix_chars,
+                        ),
+                    }
+                )
 
             except (ValueError, Exception) as e:
                 # Log error but continue processing
@@ -126,32 +116,20 @@ class IngestionProcessor:
         result_df = pl.DataFrame(normalized_records)
 
         # Ensure correct types
-        result_df = result_df.with_columns([
-            pl.col("dataset_id").cast(pl.Int32),
-            pl.col("domain_id").cast(pl.Int64),
-            pl.col("url_id").cast(pl.Int64),
-            pl.col("scheme").cast(pl.Utf8),
-            pl.col("host").cast(pl.Utf8),
-            pl.col("path_query").cast(pl.Utf8),
-            pl.col("domain").cast(pl.Utf8),
-            pl.col("domain_prefix").cast(pl.Utf8),
-        ])
+        result_df = result_df.with_columns(
+            [
+                pl.col("dataset_id").cast(pl.Int32),
+                pl.col("domain_id").cast(pl.Int64),
+                pl.col("url_id").cast(pl.Int64),
+                pl.col("scheme").cast(pl.Utf8),
+                pl.col("host").cast(pl.Utf8),
+                pl.col("path_query").cast(pl.Utf8),
+                pl.col("domain").cast(pl.Utf8),
+                pl.col("domain_prefix").cast(pl.Utf8),
+            ]
+        )
 
         return result_df
-
-    def mark_ingested(self, dataset_name: str, df: pl.DataFrame) -> None:
-        """Record URL IDs for a successfully ingested batch."""
-
-        if df.height == 0:
-            return
-
-        if "url_id" not in df.columns:
-            raise ValueError("DataFrame is missing required 'url_id' column")
-
-        self.duplicate_tracker.record_batch(
-            dataset_name,
-            df.get_column("url_id").to_list(),
-        )
 
     def _empty_dataframe(self) -> pl.DataFrame:
         """Create empty DataFrame with correct schema."""
