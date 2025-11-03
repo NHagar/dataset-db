@@ -5,6 +5,8 @@ Loads datasets from HuggingFace Hub following the naming convention:
 {username}/{dataset_name}_urls
 """
 
+import json
+from pathlib import Path
 from typing import Iterator, Optional
 
 import polars as pl
@@ -71,22 +73,74 @@ class HuggingFaceLoader:
             )
 
             # Yield batches from streaming dataset
-            yield from self._stream_batches(dataset, batch_size=self.batch_size)
+            yield from self._stream_batches(
+                dataset, dataset_name=dataset_name, batch_size=self.batch_size
+            )
 
         except Exception as e:
             raise ValueError(f"Failed to load dataset '{full_name}': {e}")
 
-    def _stream_batches(self, dataset, batch_size: int) -> Iterator[pl.DataFrame]:
+    def _get_state_dict_path(self, dataset_name: str) -> Path:
         """
-        Stream batches from HuggingFace dataset.
+        Get path to state dict file for a dataset.
+
+        Args:
+            dataset_name: Dataset name
+
+        Returns:
+            Path to state dict JSON file
+        """
+        data_dir = self.config.storage.base_path
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / f"{dataset_name}-state-dict.json"
+
+    def _load_state_dict(self, dataset_name: str) -> Optional[dict]:
+        """
+        Load state dict if it exists.
+
+        Args:
+            dataset_name: Dataset name
+
+        Returns:
+            State dict or None if file doesn't exist
+        """
+        state_path = self._get_state_dict_path(dataset_name)
+        if state_path.exists():
+            with open(state_path, "r") as f:
+                return json.load(f)
+        return None
+
+    def _save_state_dict(self, dataset_name: str, state_dict: dict) -> None:
+        """
+        Save state dict to disk.
+
+        Args:
+            dataset_name: Dataset name
+            state_dict: State dict to save
+        """
+        state_path = self._get_state_dict_path(dataset_name)
+        with open(state_path, "w") as f:
+            json.dump(state_dict, f)
+
+    def _stream_batches(
+        self, dataset, dataset_name: str, batch_size: int
+    ) -> Iterator[pl.DataFrame]:
+        """
+        Stream batches from HuggingFace dataset with resume support.
 
         Args:
             dataset: HuggingFace streaming dataset
+            dataset_name: Dataset name (for state dict persistence)
             batch_size: Number of records per batch
 
         Yields:
             Polars DataFrames with batches
         """
+        # Check for existing state dict and resume if available
+        state_dict = self._load_state_dict(dataset_name)
+        if state_dict is not None:
+            dataset.load_state_dict(state_dict)
+
         batch = []
 
         for record in dataset:
@@ -98,10 +152,18 @@ class HuggingFaceLoader:
                 yield df
                 batch = []
 
+                # Save state dict after yielding batch
+                self._save_state_dict(dataset_name, dataset.state_dict())
+
         # Yield remaining records
         if batch:
             df = pl.DataFrame(batch)
             yield df
+
+        # Clean up state dict file after successful completion
+        state_path = self._get_state_dict_path(dataset_name)
+        if state_path.exists():
+            state_path.unlink()
 
     def validate_schema(self, df: pl.DataFrame) -> bool:
         """
