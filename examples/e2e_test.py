@@ -55,7 +55,7 @@ def ingest_huggingface(dataset_name: str, username: str = "nhagar", suffix: str 
     print_section("STEP 1: INGESTING FROM HUGGINGFACE")
 
     print(f"\nDataset: {username}/{dataset_name}{suffix}")
-    print(f"Target: ./data/urls/")
+    print("Target: ./data/urls/")
 
     # Initialize components
     loader = HuggingFaceLoader(username=username, suffix=suffix)
@@ -104,7 +104,7 @@ def ingest_huggingface(dataset_name: str, username: str = "nhagar", suffix: str 
         print(f"Throughput: {total_rows / elapsed:,.0f} rows/sec")
 
         storage_stats = writer.get_storage_stats()
-        print(f"\nStorage:")
+        print("\nStorage:")
         print(f"  Partitions: {storage_stats['total_partitions']}")
         print(f"  Files: {storage_stats['total_files']}")
         print(f"  Size: {storage_stats['total_size_bytes']:,} bytes")
@@ -123,7 +123,7 @@ def ingest_local(dataset_name: str, file_path: Path):
 
     print(f"\nFile: {file_path}")
     print(f"Dataset name: {dataset_name}")
-    print(f"Target: ./data/urls/")
+    print("Target: ./data/urls/")
 
     # Check file exists
     if not file_path.exists():
@@ -151,7 +151,7 @@ def ingest_local(dataset_name: str, file_path: Path):
 
         # Check for URL column
         if "url" not in df.columns:
-            print(f"\nError: File must have a 'url' column")
+            print("\nError: File must have a 'url' column")
             print(f"Found columns: {df.columns}")
             return False
 
@@ -193,7 +193,7 @@ def ingest_local(dataset_name: str, file_path: Path):
         print(f"Throughput: {total_rows / elapsed:,.0f} rows/sec")
 
         storage_stats = writer.get_storage_stats()
-        print(f"\nStorage:")
+        print("\nStorage:")
         print(f"  Partitions: {storage_stats['total_partitions']}")
         print(f"  Files: {storage_stats['total_files']}")
         print(f"  Size: {storage_stats['total_size_bytes']:,} bytes")
@@ -238,14 +238,14 @@ def build_indexes(incremental: bool = False):
         manifest.load()
         current = manifest.get_current_version()
 
-        print(f"\nIndex files:")
+        print("\nIndex files:")
         print(f"  Domain dictionary: {current.domains_txt}")
         print(f"  Domain MPHF: {current.domains_mphf}")
         print(f"  Membership index: {current.d2d_roar}")
         print(f"  File registry: {current.files_tsv}")
 
         # Show index stats
-        from dataset_db.index import SimpleMPHF, MembershipIndex
+        from dataset_db.index import MembershipIndex
         import zstandard as zstd
 
         # Load domain dictionary
@@ -259,7 +259,7 @@ def build_indexes(incremental: bool = False):
         print(f"\nDomains indexed: {len(domains):,}")
 
         # Show sample domains
-        print(f"Sample domains:")
+        print("Sample domains:")
         for i, domain in enumerate(domains[:5]):
             print(f"  {i}: {domain}")
 
@@ -343,7 +343,7 @@ def test_queries():
                         for item in urls_result.items[:5]:
                             print(f"      - {item.url}")
             else:
-                print(f"  No data found")
+                print("  No data found")
 
         print_subsection("Query Testing Complete")
         return True
@@ -404,7 +404,7 @@ def validate_implementation():
         print(f"   ✓ Found {stats['total_files']} Parquet files")
         checks_passed += 1
     else:
-        print(f"   ✗ No Parquet files found")
+        print("   ✗ No Parquet files found")
 
     # Check 2: Indexes exist
     checks_total += 1
@@ -419,7 +419,7 @@ def validate_implementation():
         print(f"   ✓ Found index version: {current.version}")
         checks_passed += 1
     else:
-        print(f"   ✗ No index manifest found")
+        print("   ✗ No index manifest found")
 
     # Check 3: Query service works
     checks_total += 1
@@ -452,7 +452,7 @@ def validate_implementation():
             else:
                 print(f"   ✗ Query returned no results for {test_domain}")
         else:
-            print(f"   ✗ No domains to test")
+            print("   ✗ No domains to test")
     except Exception as e:
         print(f"   ✗ Query service error: {e}")
 
@@ -472,13 +472,13 @@ def validate_implementation():
                 # Reconstruct first URL
                 row = df[0]
                 reconstructed = f"{row['scheme'][0]}://{row['host'][0]}{row['path_query'][0]}"
-                print(f"   ✓ URL reconstruction works")
+                print("   ✓ URL reconstruction works")
                 print(f"     Example: {reconstructed}")
                 checks_passed += 1
             else:
-                print(f"   ✗ No data in partition")
+                print("   ✗ No data in partition")
         else:
-            print(f"   ✗ No partitions to test")
+            print("   ✗ No partitions to test")
     except Exception as e:
         print(f"   ✗ URL reconstruction error: {e}")
 

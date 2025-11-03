@@ -83,9 +83,7 @@ class HuggingFaceLoader:
         except Exception as e:
             raise ValueError(f"Failed to load dataset '{full_name}': {e}")
 
-    def _stream_batches(
-        self, dataset, batch_size: int
-    ) -> Iterator[pl.DataFrame]:
+    def _stream_batches(self, dataset, batch_size: int) -> Iterator[pl.DataFrame]:
         """
         Stream batches from HuggingFace dataset.
 
