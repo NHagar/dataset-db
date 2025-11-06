@@ -31,9 +31,7 @@ class StorageLayout:
         self.base_path = Path(base_path)
         self.urls_root = self.base_path / "urls"
 
-    def get_partition_path(
-        self, dataset_id: int, domain_prefix: str
-    ) -> Path:
+    def get_partition_path(self, dataset_id: int, domain_prefix: str) -> Path:
         """
         Get the directory path for a specific partition.
 
@@ -80,9 +78,7 @@ class StorageLayout:
         partition_path = self.get_partition_path(dataset_id, domain_prefix)
         return partition_path / f"part-{part_number:05d}.parquet"
 
-    def ensure_partition_exists(
-        self, dataset_id: int, domain_prefix: str
-    ) -> Path:
+    def ensure_partition_exists(self, dataset_id: int, domain_prefix: str) -> Path:
         """
         Create partition directory if it doesn't exist.
 
@@ -156,9 +152,7 @@ class StorageLayout:
 
         return sorted(partitions)
 
-    def list_parquet_files(
-        self, dataset_id: int, domain_prefix: str
-    ) -> list[Path]:
+    def list_parquet_files(self, dataset_id: int, domain_prefix: str) -> list[Path]:
         """
         List all Parquet files in a specific partition.
 
@@ -178,9 +172,7 @@ class StorageLayout:
         parquet_files = sorted(partition_path.glob("part-*.parquet"))
         return parquet_files
 
-    def get_next_part_number(
-        self, dataset_id: int, domain_prefix: str
-    ) -> int:
+    def get_next_part_number(self, dataset_id: int, domain_prefix: str) -> int:
         """
         Get the next available part number for a partition.
 

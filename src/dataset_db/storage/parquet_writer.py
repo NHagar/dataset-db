@@ -54,15 +54,11 @@ class ParquetWriter:
 
         # Use provided values or fall back to config
         self.base_path = base_path or self.config.storage.base_path
-        self.compression = (
-            compression or self.config.ingestion.compression
-        )
+        self.compression = compression or self.config.ingestion.compression
         self.compression_level = (
             compression_level or self.config.ingestion.compression_level
         )
-        self.row_group_size = (
-            row_group_size or self.config.ingestion.row_group_size
-        )
+        self.row_group_size = row_group_size or self.config.ingestion.row_group_size
         self.partition_buffer_size = (
             partition_buffer_size
             if partition_buffer_size is not None
@@ -155,14 +151,16 @@ class ParquetWriter:
             domain_prefix = first_row["domain_prefix"]
 
             # Remove partition columns before buffering (they're in the directory path)
-            write_df = partition_df.select([
-                "domain_id",
-                "url_id",
-                "scheme",
-                "host",
-                "path_query",
-                "domain",
-            ])
+            write_df = partition_df.select(
+                [
+                    "domain_id",
+                    "url_id",
+                    "scheme",
+                    "host",
+                    "path_query",
+                    "domain",
+                ]
+            )
 
             # Add to partition buffer
             partition_key = (ds_id, domain_prefix)
@@ -183,11 +181,14 @@ class ParquetWriter:
             # partition_buffer_size=0 means immediate writes (no buffering)
             if auto_flush and (
                 self.partition_buffer_size == 0
-                or self._partition_buffer_sizes[partition_key] >= self.partition_buffer_size
+                or self._partition_buffer_sizes[partition_key]
+                >= self.partition_buffer_size
             ):
                 flush_result = self._flush_partition(ds_id, domain_prefix)
                 files_written += flush_result["files_written"]
-                rows_from_current_batch = flush_result["rows_written"] - previous_buffer_rows
+                rows_from_current_batch = (
+                    flush_result["rows_written"] - previous_buffer_rows
+                )
                 if rows_from_current_batch < 0:
                     rows_from_current_batch = flush_result["rows_written"]
                 rows_flushed += rows_from_current_batch
@@ -205,7 +206,9 @@ class ParquetWriter:
             "total_rows_processed": total_rows_processed,
         }
 
-    def flush(self, dataset_id: Optional[int] = None, domain_prefix: Optional[str] = None) -> dict[str, int]:
+    def flush(
+        self, dataset_id: Optional[int] = None, domain_prefix: Optional[str] = None
+    ) -> dict[str, int]:
         """
         Flush buffered data to disk.
 
@@ -227,8 +230,7 @@ class ParquetWriter:
         elif dataset_id is not None:
             # Flush all partitions for a dataset
             keys_to_flush = [
-                key for key in self._partition_buffers.keys()
-                if key[0] == dataset_id
+                key for key in self._partition_buffers.keys() if key[0] == dataset_id
             ]
             for ds_id, dp in keys_to_flush:
                 result = self._flush_partition(ds_id, dp)
@@ -264,7 +266,10 @@ class ParquetWriter:
         """
         partition_key = (dataset_id, domain_prefix)
 
-        if partition_key not in self._partition_buffers or not self._partition_buffers[partition_key]:
+        if (
+            partition_key not in self._partition_buffers
+            or not self._partition_buffers[partition_key]
+        ):
             return {"files_written": 0, "rows_written": 0}
 
         # Concatenate all buffered DataFrames for this partition
@@ -311,9 +316,7 @@ class ParquetWriter:
         self.layout.ensure_partition_exists(dataset_id, domain_prefix)
 
         # Get next part number
-        part_number = self.layout.get_next_part_number(
-            dataset_id, domain_prefix
-        )
+        part_number = self.layout.get_next_part_number(dataset_id, domain_prefix)
 
         # Get output path
         output_path = self.layout.get_parquet_path(
@@ -347,9 +350,7 @@ class ParquetWriter:
 
         return 1
 
-    def _build_schema_with_encoding(
-        self, original_schema: pa.Schema
-    ) -> pa.Schema:
+    def _build_schema_with_encoding(self, original_schema: pa.Schema) -> pa.Schema:
         """
         Build PyArrow schema with dictionary encoding for string columns.
 
@@ -369,9 +370,7 @@ class ParquetWriter:
 
         fields = []
         for field in original_schema:
-            if field.name in dictionary_columns and pa.types.is_string(
-                field.type
-            ):
+            if field.name in dictionary_columns and pa.types.is_string(field.type):
                 # Convert to dictionary-encoded string
                 fields.append(
                     pa.field(
@@ -464,8 +463,7 @@ class ParquetWriter:
             actual_type = df[col].dtype
             if actual_type != expected_type:
                 raise ValueError(
-                    f"Column '{col}' has type {actual_type}, "
-                    f"expected {expected_type}"
+                    f"Column '{col}' has type {actual_type}, expected {expected_type}"
                 )
 
     def get_stats(self) -> dict:
@@ -498,12 +496,14 @@ class ParquetWriter:
             )
             total_rows += rows
 
-            partition_details.append({
-                "dataset_id": dataset_id,
-                "domain_prefix": domain_prefix,
-                "rows": rows,
-                "bytes": bytes_buffered,
-            })
+            partition_details.append(
+                {
+                    "dataset_id": dataset_id,
+                    "domain_prefix": domain_prefix,
+                    "rows": rows,
+                    "bytes": bytes_buffered,
+                }
+            )
 
         return {
             "total_partitions_buffered": len(self._partition_buffers),
@@ -541,19 +541,13 @@ class ParquetWriter:
         Raises:
             FileNotFoundError: If partition doesn't exist
         """
-        partition_path = self.layout.get_partition_path(
-            dataset_id, domain_prefix
-        )
+        partition_path = self.layout.get_partition_path(dataset_id, domain_prefix)
 
         if not partition_path.exists():
-            raise FileNotFoundError(
-                f"Partition not found: {partition_path}"
-            )
+            raise FileNotFoundError(f"Partition not found: {partition_path}")
 
         # Read all parquet files in partition
-        parquet_files = self.layout.list_parquet_files(
-            dataset_id, domain_prefix
-        )
+        parquet_files = self.layout.list_parquet_files(dataset_id, domain_prefix)
 
         if not parquet_files:
             # Return empty DataFrame with correct schema
