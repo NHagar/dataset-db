@@ -430,7 +430,9 @@ class MembershipIndex:
         old_bitmaps = {}
         if prev_membership_path and prev_membership_path.exists():
             try:
-                logger.info(f"Loading previous membership index from {prev_membership_path}")
+                logger.info(
+                    f"Loading previous membership index from {prev_membership_path}"
+                )
                 self.load(prev_membership_path, num_old_domains)
                 old_bitmaps = self.domain_bitmaps.copy()
                 logger.info(f"Loaded {len(old_bitmaps)} bitmaps from previous version")

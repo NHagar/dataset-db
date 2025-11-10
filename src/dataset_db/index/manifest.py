@@ -108,9 +108,7 @@ class Manifest:
             data = json.load(f)
 
         self.current_version = data.get("current_version")
-        self.versions = [
-            IndexVersion.from_dict(v) for v in data.get("versions", [])
-        ]
+        self.versions = [IndexVersion.from_dict(v) for v in data.get("versions", [])]
 
         logger.info(
             f"Loaded manifest: current_version={self.current_version}, "
@@ -266,7 +264,9 @@ class Manifest:
             return []
 
         # Sort by creation time
-        sorted_versions = sorted(self.versions, key=lambda x: x.created_at, reverse=True)
+        sorted_versions = sorted(
+            self.versions, key=lambda x: x.created_at, reverse=True
+        )
 
         # Keep the last N
         to_keep = sorted_versions[:keep_last_n]

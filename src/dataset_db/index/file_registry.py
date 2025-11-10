@@ -305,7 +305,9 @@ class FileRegistry:
         self.files = existing_files + new_files
 
         # Rebuild reverse lookup
-        self.path_to_id = {row["parquet_rel_path"]: row["file_id"] for row in self.files}
+        self.path_to_id = {
+            row["parquet_rel_path"]: row["file_id"] for row in self.files
+        }
 
         # Save merged registry
         output_path = base_path / "index" / version / "files.tsv.zst"
