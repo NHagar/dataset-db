@@ -36,9 +36,7 @@ class DomainDictionary:
         self.base_path = Path(base_path)
         self.layout = StorageLayout(base_path)
 
-    def extract_unique_domains(
-        self, dataset_ids: list[int] | None = None
-    ) -> list[str]:
+    def extract_unique_domains(self, dataset_ids: list[int] | None = None) -> list[str]:
         """
         Extract unique domains from all Parquet files.
 

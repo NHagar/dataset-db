@@ -174,6 +174,24 @@ class TestQueryService:
             assert any("example.com" in url for url in urls)
             assert all(item.url_id is not None for item in response.items)
 
+    def test_get_urls_returns_items_for_matching_domain(self, test_data_path):
+        """Regression: ensure URL lookups return data for valid domain/dataset."""
+        loader = IndexLoader(test_data_path)
+        loader.load()
+        service = QueryService(loader)
+
+        response = service.get_urls_for_domain_dataset(
+            "example.com", dataset_id=0, limit=10
+        )
+
+        urls = [item.url for item in response.items]
+
+        # Expect the two example.com rows we ingested for dataset 0
+        assert len(urls) >= 2
+        assert any(url.endswith("/page1") for url in urls)
+        assert any(url.endswith("/page2") for url in urls)
+        assert all("example.com" in url for url in urls)
+
     def test_url_pagination(self, test_data_path):
         """Test pagination of URL results."""
         loader = IndexLoader(test_data_path)

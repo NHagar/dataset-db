@@ -125,7 +125,7 @@ class QueryService:
 
             # Read specific row group, filtering by domain_id
             try:
-                df = self._read_row_group_filtered(parquet_path, row_group, domain_id)
+                df = self._read_row_group_filtered(parquet_path, row_group, domain)
             except Exception as e:
                 logger.error(f"Error reading {parquet_path} row_group {row_group}: {e}")
                 continue
@@ -162,15 +162,15 @@ class QueryService:
         )
 
     def _read_row_group_filtered(
-        self, parquet_path: Path, row_group: int, domain_id: int
+        self, parquet_path: Path, row_group: int, domain: str
     ) -> pl.DataFrame:
         """
-        Read a specific row group from a Parquet file, filtering by domain_id.
+        Read a specific row group from a Parquet file, filtering by domain string.
 
         Args:
             parquet_path: Path to Parquet file
             row_group: Row group number
-            domain_id: Domain ID to filter on
+            domain: Domain string to filter on
 
         Returns:
             Filtered DataFrame
@@ -178,7 +178,9 @@ class QueryService:
         # Read specific row group with filter
         # Note: Polars doesn't directly support row group reading, so we read the whole file
         # and filter. In production, we'd use PyArrow or DuckDB for row-group-level reads.
-        df = pl.scan_parquet(parquet_path).filter(pl.col("domain_id") == domain_id).collect()
+        # Dataset parquet files store the canonical domain string, so we filter on that to
+        # remain consistent with the domain dictionary / membership indexes.
+        df = pl.scan_parquet(parquet_path).filter(pl.col("domain") == domain).collect()
 
         return df
 

@@ -35,9 +35,9 @@ class SimpleMPHF:
         """Initialize MPHF."""
         self.domain_to_id: dict[str, int] = {}
         self.hash_to_id: dict[int, int] = {}  # hash64 → domain_id
-        self.collision_map: dict[int, list[tuple[int, str, int]]] = (
-            {}
-        )  # hash64 → [(tag, domain, id), ...]
+        self.collision_map: dict[
+            int, list[tuple[int, str, int]]
+        ] = {}  # hash64 → [(tag, domain, id), ...]
 
     def build(self, domains: list[str]) -> None:
         """
@@ -258,9 +258,7 @@ class SimpleMPHF:
 
             self.collision_map[hash_val] = entries
             # Mark hash as having collisions
-            self.hash_to_id[hash_val] = entries[0][
-                2
-            ]  # Store first entry in hash_to_id
+            self.hash_to_id[hash_val] = entries[0][2]  # Store first entry in hash_to_id
 
         logger.info(
             f"Loaded MPHF: {num_domains} domains, "

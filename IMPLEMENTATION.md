@@ -20,6 +20,13 @@
 
 ---
 
+## Notes (2025-11-10)
+
+- Fixed the regression where URL lookups returned empty results despite valid memberships. The parquet files store the canonical domain string (not the MPHF-assigned ID), so `QueryService` now filters row groups by the `domain` column instead of the synthetic `domain_id`. Verified via a loader/query smoke test that the first sample domain now returns real URLs.
+- Added a focused unit test (`TestQueryService::test_get_urls_returns_items_for_matching_domain`) to ensure we never regress on URL retrieval for valid domain/dataset pairs.
+
+---
+
 ## Milestone 1: URL Normalization & Ingestion ✅
 
 ### Components

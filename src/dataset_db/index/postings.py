@@ -190,9 +190,9 @@ class PostingsIndex:
         )
 
         # Group postings by shard
-        shard_postings: dict[int, list[tuple[tuple[int, int], list[tuple[int, int]]]]] = {
-            shard: [] for shard in range(self.num_shards)
-        }
+        shard_postings: dict[
+            int, list[tuple[tuple[int, int], list[tuple[int, int]]]]
+        ] = {shard: [] for shard in range(self.num_shards)}
 
         for key, payload in sorted(self.postings.items()):
             domain_id, dataset_id = key
@@ -205,9 +205,7 @@ class PostingsIndex:
             if not postings_list:
                 continue  # Skip empty shards
 
-            shard_dir = (
-                self.base_path / "index" / version / "postings" / f"{shard:04d}"
-            )
+            shard_dir = self.base_path / "index" / version / "postings" / f"{shard:04d}"
             shard_dir.mkdir(parents=True, exist_ok=True)
 
             # Build .dat file (payloads)
@@ -520,7 +518,9 @@ class PostingsIndex:
 
         return merged
 
-    def load_all_shards(self, version: str) -> dict[tuple[int, int], list[tuple[int, int]]]:
+    def load_all_shards(
+        self, version: str
+    ) -> dict[tuple[int, int], list[tuple[int, int]]]:
         """
         Load all shards of postings index.
 
@@ -585,7 +585,9 @@ class PostingsIndex:
             try:
                 logger.info(f"Loading previous postings from version {prev_version}")
                 old_postings = self.load_all_shards(prev_version)
-                logger.info(f"Loaded {len(old_postings)} postings from previous version")
+                logger.info(
+                    f"Loaded {len(old_postings)} postings from previous version"
+                )
             except Exception as e:
                 logger.warning(
                     f"Failed to load previous postings: {e}, starting from scratch"
