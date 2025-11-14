@@ -492,6 +492,11 @@ python examples/inspect_data.py --domain example.com
 ### 2024-11-20
 - Fixed MPHF loader to reset `domain_to_id` and log the stored domain count from the file header. Prevents misleading "0 domains" messages when loading persisted MPHFs.
 
+### 2025-11-14
+- Implemented a persistent dataset registry stored at `data/registry/dataset_registry.json` so dataset IDs survive multiple ingestion sessions.
+- `IngestionProcessor` now depends on the registry (instead of the transient ID generator) and `examples/inspect_data.py` can display the mapping.
+- Added regression tests covering registry persistence and sequential assignment to avoid future regressions.
+
 ---
 
 ## Milestone 5: Incremental Updates (In Progress)

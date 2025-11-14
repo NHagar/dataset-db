@@ -11,6 +11,8 @@ import polars as pl
 from dataset_db.config import get_config
 from dataset_db.normalization import IDGenerator, URLNormalizer
 
+from .dataset_registry import DatasetRegistry
+
 
 class IngestionProcessor:
     """
@@ -24,6 +26,7 @@ class IngestionProcessor:
         self,
         normalizer: Optional[URLNormalizer] = None,
         id_generator: Optional[IDGenerator] = None,
+        dataset_registry: Optional[DatasetRegistry] = None,
     ):
         """
         Initialize ingestion processor.
@@ -31,9 +34,11 @@ class IngestionProcessor:
         Args:
             normalizer: URL normalizer instance (creates new if None)
             id_generator: ID generator instance (creates new if None)
+            dataset_registry: Persistent dataset registry (creates new if None)
         """
         self.normalizer = normalizer or URLNormalizer()
         self.id_generator = id_generator or IDGenerator()
+        self.dataset_registry = dataset_registry or DatasetRegistry()
         self.config = get_config()
 
     def process_batch(self, df: pl.DataFrame, dataset_name: str) -> pl.DataFrame:
@@ -60,8 +65,8 @@ class IngestionProcessor:
         Returns:
             Normalized DataFrame ready for Parquet writing
         """
-        # Register dataset and get ID
-        dataset_id = self.id_generator.register_dataset(dataset_name)
+        # Register dataset and get persistent ID
+        dataset_id = self.dataset_registry.register_dataset(dataset_name)
 
         # Process each URL through normalizer
         normalized_records = []
@@ -146,7 +151,7 @@ class IngestionProcessor:
         Returns:
             Dictionary with stats like datasets processed, URL counts, etc.
         """
-        datasets = self.id_generator.get_all_datasets()
+        datasets = self.dataset_registry.to_dict()
         return {
             "datasets_processed": len(datasets),
             "datasets": datasets,
