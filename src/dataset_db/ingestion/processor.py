@@ -39,6 +39,7 @@ class IngestionProcessor:
         self.normalizer = normalizer or URLNormalizer()
         self.id_generator = id_generator or IDGenerator()
         self.dataset_registry = dataset_registry or DatasetRegistry()
+        self._processed_datasets: dict[str, int] = {}
         self.config = get_config()
 
     def process_batch(self, df: pl.DataFrame, dataset_name: str) -> pl.DataFrame:
@@ -67,6 +68,7 @@ class IngestionProcessor:
         """
         # Register dataset and get persistent ID
         dataset_id = self.dataset_registry.register_dataset(dataset_name)
+        self._processed_datasets[dataset_name] = dataset_id
 
         # Process each URL through normalizer
         normalized_records = []
@@ -151,7 +153,7 @@ class IngestionProcessor:
         Returns:
             Dictionary with stats like datasets processed, URL counts, etc.
         """
-        datasets = self.dataset_registry.to_dict()
+        datasets = dict(self._processed_datasets)
         return {
             "datasets_processed": len(datasets),
             "datasets": datasets,
