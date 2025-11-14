@@ -1,8 +1,8 @@
 """
 HuggingFace dataset loader.
 
-Loads datasets from HuggingFace Hub following the naming convention:
-{username}/{dataset_name}_urls
+Loads datasets from HuggingFace Hub with the format:
+{username}/{dataset_name}
 """
 
 import json
@@ -27,7 +27,6 @@ class HuggingFaceLoader:
     def __init__(
         self,
         username: str = "nhagar",
-        suffix: str = "_urls",
         batch_size: Optional[int] = None,
     ):
         """
@@ -35,11 +34,9 @@ class HuggingFaceLoader:
 
         Args:
             username: HuggingFace username (default: 'nhagar')
-            suffix: Dataset name suffix (default: '_urls')
             batch_size: Batch size for streaming (default: from config, 1M rows)
         """
         self.username = username
-        self.suffix = suffix
         self.config = get_config()
         self.batch_size = batch_size or self.config.ingestion.batch_size
 
@@ -53,7 +50,7 @@ class HuggingFaceLoader:
         Load a dataset from HuggingFace Hub.
 
         Args:
-            dataset_name: Dataset name (without username prefix or suffix)
+            dataset_name: Full dataset name after username (e.g., 'reddit_urls', 'twitter_urls', or 'custom_dataset')
             split: Dataset split to load (default: 'train')
             resume: Whether to attempt resume from saved state (default: True)
 
@@ -64,7 +61,7 @@ class HuggingFaceLoader:
             ValueError: If dataset cannot be loaded
         """
         # Construct full dataset identifier
-        full_name = f"{self.username}/{dataset_name}{self.suffix}"
+        full_name = f"{self.username}/{dataset_name}"
 
         try:
             # Load dataset from HuggingFace

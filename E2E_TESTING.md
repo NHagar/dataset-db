@@ -10,10 +10,10 @@ If you have datasets on HuggingFace (like `nhagar/reddit_urls`):
 
 ```bash
 # Install dependencies (if using uv)
-uv run python examples/e2e_test.py --dataset reddit --source huggingface
+uv run python examples/e2e_test.py --dataset reddit_urls --source huggingface
 
 # Or with regular Python
-python examples/e2e_test.py --dataset reddit --source huggingface --username nhagar
+python examples/e2e_test.py --dataset reddit_urls --source huggingface --username nhagar
 ```
 
 ### Option 2: Test with Local File
@@ -82,11 +82,10 @@ python examples/e2e_test.py [OPTIONS]
 
 ### Data Source Options
 
-- `--dataset NAME` - Dataset name (required unless `--skip-ingestion`)
+- `--dataset NAME` - Full dataset name after username (e.g., 'reddit_urls', 'twitter_urls') (required unless `--skip-ingestion`)
 - `--source {huggingface,local}` - Where to load data from
 - `--file PATH` - Local file path (required for `--source local`)
 - `--username NAME` - HuggingFace username (default: `nhagar`)
-- `--suffix SUFFIX` - HuggingFace dataset suffix (default: `_urls`)
 
 ### Workflow Options
 
@@ -101,7 +100,7 @@ python examples/e2e_test.py [OPTIONS]
 
 ```bash
 python examples/e2e_test.py \
-  --dataset reddit \
+  --dataset reddit_urls \
   --source huggingface \
   --username nhagar \
   --validate
@@ -130,10 +129,10 @@ Your CSV file must have a `url` column with URLs to process.
 
 ```bash
 # First ingestion
-python examples/e2e_test.py --dataset dataset1 --source huggingface
+python examples/e2e_test.py --dataset reddit_urls --source huggingface
 
 # Add more data later
-python examples/e2e_test.py --dataset dataset2 --source huggingface --incremental
+python examples/e2e_test.py --dataset twitter_urls --source huggingface --incremental
 ```
 
 The `--incremental` flag uses incremental index building, which is much faster than full rebuilds.
