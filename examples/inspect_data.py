@@ -194,7 +194,7 @@ def show_dataset_registry():
     print("=" * 80)
 
     try:
-        from dataset_db.ingestion.processor import DatasetRegistry
+        from dataset_db.ingestion.dataset_registry import DatasetRegistry
 
         registry = DatasetRegistry()
         registry_dict = registry.to_dict()
