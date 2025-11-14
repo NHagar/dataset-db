@@ -51,16 +51,16 @@ def print_subsection(title):
 
 
 def ingest_huggingface(
-    dataset_name: str, username: str = "nhagar", suffix: str = "_urls"
+    dataset_name: str, username: str = "nhagar"
 ):
     """Ingest data from HuggingFace dataset."""
     print_section("STEP 1: INGESTING FROM HUGGINGFACE")
 
-    print(f"\nDataset: {username}/{dataset_name}{suffix}")
+    print(f"\nDataset: {username}/{dataset_name}")
     print("Target: ./data/urls/")
 
     # Initialize components
-    loader = HuggingFaceLoader(username=username, suffix=suffix)
+    loader = HuggingFaceLoader(username=username)
     processor = IngestionProcessor()
     writer = ParquetWriter(base_path=Path("./data"))
 
@@ -547,9 +547,6 @@ Examples:
         "--username", default="nhagar", help="HuggingFace username (default: nhagar)"
     )
     parser.add_argument(
-        "--suffix", default="_urls", help="HuggingFace dataset suffix (default: _urls)"
-    )
-    parser.add_argument(
         "--skip-ingestion",
         action="store_true",
         help="Skip ingestion, use existing data",
@@ -583,7 +580,7 @@ Examples:
     if not args.skip_ingestion:
         if args.source == "huggingface":
             success = ingest_huggingface(
-                args.dataset, username=args.username, suffix=args.suffix
+                args.dataset, username=args.username
             )
         elif args.source == "local":
             success = ingest_local(args.dataset, args.file)

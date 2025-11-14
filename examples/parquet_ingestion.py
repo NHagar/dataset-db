@@ -240,16 +240,16 @@ def example_streaming_ingestion():
     # This would connect to HuggingFace - stub for now
     print("Note: This example requires a real HuggingFace dataset.")
     print("Run `uv run python examples/parquet_ingestion.py --with-hf <dataset_name>`")
-    print("to test with a real dataset.")
+    print("to test with a real dataset (e.g., reddit_urls, twitter_urls).")
 
     # Example code structure:
     """
-    loader = HuggingFaceLoader(username="nhagar", suffix="_urls")
+    loader = HuggingFaceLoader(username="nhagar")
     processor = IngestionProcessor()
     writer = ParquetWriter(base_path=Path("./data"))
 
-    for batch_df in loader.load("dataset_name"):
-        normalized_df = processor.process_batch(batch_df, "dataset_name")
+    for batch_df in loader.load("reddit_urls"):
+        normalized_df = processor.process_batch(batch_df, "reddit_urls")
         result = writer.write_batch(normalized_df)
         print(f"Wrote batch: {result['rows_written']} rows")
     """
@@ -269,9 +269,9 @@ def main():
 
     if args.with_hf:
         # Real HuggingFace ingestion
-        print(f"Loading HuggingFace dataset: {args.with_hf}")
+        print(f"Loading HuggingFace dataset: nhagar/{args.with_hf}")
 
-        loader = HuggingFaceLoader(username="nhagar", suffix="_urls")
+        loader = HuggingFaceLoader(username="nhagar")
         processor = IngestionProcessor()
         writer = ParquetWriter(base_path=Path("./data"))
 

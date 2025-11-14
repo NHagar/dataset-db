@@ -43,7 +43,7 @@ If you have a dataset on HuggingFace (like `nhagar/reddit_urls`):
 
 ```bash
 python examples/e2e_test.py \
-  --dataset reddit \
+  --dataset reddit_urls \
   --source huggingface \
   --username nhagar
 ```
@@ -132,7 +132,7 @@ Here's a complete workflow with a real dataset:
 ```bash
 # 1. Ingest data from HuggingFace
 python examples/e2e_test.py \
-  --dataset reddit \
+  --dataset reddit_urls \
   --source huggingface \
   --username nhagar
 
@@ -144,7 +144,7 @@ python examples/inspect_data.py --domain reddit.com
 
 # 4. Add more data (incremental)
 python examples/e2e_test.py \
-  --dataset twitter \
+  --dataset twitter_urls \
   --source huggingface \
   --username nhagar \
   --incremental
