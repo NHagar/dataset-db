@@ -1,11 +1,11 @@
 #!/bin/bash
 
 #SBATCH --account=p32491              # Allocation to charge
-#SBATCH --partition=short             # Quest partition/queue
+#SBATCH --partition=normal             # Quest partition/queue
 #SBATCH --job-name=dataset_ingest     # Job name shown in squeue
 #SBATCH --nodes=1                     # Number of nodes
 #SBATCH --ntasks-per-node=1           # Tasks (CPUs) per node
-#SBATCH --time=12:00:00               # Walltime hh:mm:ss
+#SBATCH --time=48:00:00               # Walltime hh:mm:ss
 #SBATCH --mem=16G                     # Memory per node
 #SBATCH --output=%x_%j.out            # Standard output log
 #SBATCH --error=%x_%j.err             # Standard error log
