@@ -9,6 +9,8 @@
 #SBATCH --mem=16G                     # Memory per node
 #SBATCH --output=%x_%j.out            # Standard output log
 #SBATCH --error=%x_%j.err             # Standard error log
+#SBATCH --mail-user=nicholas.hagar@northwestern.edu
+#SBATCH --mail-type=ALL
 
 set -euo pipefail
 
