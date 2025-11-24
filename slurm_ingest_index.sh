@@ -6,7 +6,7 @@
 #SBATCH --nodes=1                     # Number of nodes
 #SBATCH --ntasks-per-node=1           # Tasks (CPUs) per node
 #SBATCH --time=48:00:00               # Walltime hh:mm:ss
-#SBATCH --mem=16G                     # Memory per node
+#SBATCH --mem=32G                     # Memory per node
 #SBATCH --output=%x_%j.out            # Standard output log
 #SBATCH --error=%x_%j.err             # Standard error log
 #SBATCH --mail-user=nicholas.hagar@northwestern.edu
