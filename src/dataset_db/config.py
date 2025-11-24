@@ -36,6 +36,13 @@ class IngestionConfig(BaseSettings):
         default=128 * 1024 * 1024,  # 128MB
         description="Buffer size per partition before flushing to disk",
     )
+    max_total_buffer_size: int = Field(
+        default=1 * 1024 * 1024 * 1024,  # 1GB
+        description=(
+            "Global in-memory cap across all partitions before forced flush. "
+            "Set to 0 to disable."
+        ),
+    )
     compression: str = Field(default="zstd", description="Compression codec")
     compression_level: int = Field(
         default=6, description="Compression level (1-22 for zstd)"

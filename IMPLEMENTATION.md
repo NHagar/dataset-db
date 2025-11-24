@@ -3,11 +3,12 @@
 **Project:** dataset-db — Domain → Datasets → URLs at scale  
 **Status:** Milestone 5 complete (Incremental Updates)  
 **Tests:** 149 unit tests; `uv run ruff check . --fix` clean  
-**Last Updated:** 2025-11-20
+**Last Updated:** 2025-11-21
 
 ---
 
 ## Recent Notes
+- 2025-11-21: Added global buffer cap + forced flush strategy in `ParquetWriter` to keep ingestion memory bounded on high-cardinality domains (OOM safeguard).
 - 2025-11-20: Added `ingest_and_index_from_list.py` + `slurm_ingest_index.sh` for batch HuggingFace ingestion with resume + skip-existing detection (registry + Parquet presence). Flags allow forcing re-ingest.
 - 2025-11-10: URL retrieval regression fixed (query now filters Parquet by canonical `domain`). Added targeted test to prevent reoccurrence.
 

@@ -39,6 +39,7 @@ class ParquetWriter:
         compression_level: Optional[int] = None,
         row_group_size: Optional[int] = None,
         partition_buffer_size: Optional[int] = None,
+        max_total_buffer_size: Optional[int] = None,
     ):
         """
         Initialize Parquet writer.
@@ -49,6 +50,8 @@ class ParquetWriter:
             compression_level: Compression level (defaults to config, typically 6)
             row_group_size: Target row group size in bytes (defaults to 128MB)
             partition_buffer_size: Buffer size per partition before flushing (defaults to 128MB)
+            max_total_buffer_size: Global in-memory cap across all partitions before
+                forcing flushes (defaults to 1GB). Set to 0 to disable.
         """
         self.config = get_config()
 
@@ -64,6 +67,11 @@ class ParquetWriter:
             if partition_buffer_size is not None
             else self.config.ingestion.partition_buffer_size
         )
+        self.max_total_buffer_size = (
+            max_total_buffer_size
+            if max_total_buffer_size is not None
+            else self.config.ingestion.max_total_buffer_size
+        )
 
         # Initialize storage layout manager
         self.layout = StorageLayout(self.base_path)
@@ -72,6 +80,8 @@ class ParquetWriter:
         self._partition_buffers: dict[tuple[int, str], list[pl.DataFrame]] = {}
         self._partition_buffer_sizes: dict[tuple[int, str], int] = {}
         self._partition_buffer_rows: dict[tuple[int, str], int] = {}
+        self._total_buffer_bytes: int = 0
+        self._total_buffer_rows: int = 0
 
         # Statistics tracking
         self._stats = {
@@ -142,7 +152,6 @@ class ParquetWriter:
 
         files_written = 0
         rows_flushed = 0
-        rows_buffered = 0
 
         for partition_df in partitions:
             # Extract partition values from first row
@@ -164,7 +173,6 @@ class ParquetWriter:
 
             # Add to partition buffer
             partition_key = (ds_id, domain_prefix)
-            previous_buffer_rows = self._partition_buffer_rows.get(partition_key, 0)
             if partition_key not in self._partition_buffers:
                 self._partition_buffers[partition_key] = []
                 self._partition_buffer_sizes[partition_key] = 0
@@ -176,31 +184,24 @@ class ParquetWriter:
             buffer_size = write_df.to_arrow().nbytes
             self._partition_buffer_sizes[partition_key] += buffer_size
             self._partition_buffer_rows[partition_key] += write_df.height
+            self._total_buffer_bytes += buffer_size
+            self._total_buffer_rows += write_df.height
 
-            # Flush if buffer exceeds threshold and auto_flush is enabled
-            # partition_buffer_size=0 means immediate writes (no buffering)
-            if auto_flush and (
-                self.partition_buffer_size == 0
-                or self._partition_buffer_sizes[partition_key]
-                >= self.partition_buffer_size
-            ):
+            if auto_flush and self._should_flush_partition(partition_key):
                 flush_result = self._flush_partition(ds_id, domain_prefix)
                 files_written += flush_result["files_written"]
-                rows_from_current_batch = (
-                    flush_result["rows_written"] - previous_buffer_rows
-                )
-                if rows_from_current_batch < 0:
-                    rows_from_current_batch = flush_result["rows_written"]
-                rows_flushed += rows_from_current_batch
-            else:
-                # Rows were buffered, not flushed
-                rows_buffered += write_df.height
+                rows_flushed += flush_result["rows_written"]
+
+        if auto_flush:
+            forced_flush_result = self._flush_over_global_limit()
+            files_written += forced_flush_result["files_written"]
+            rows_flushed += forced_flush_result["rows_written"]
 
         # Update stats
         self._stats["batches_written"] += 1
 
         return {
-            "rows_buffered": rows_buffered,
+            "rows_buffered": self._total_buffer_rows,
             "rows_flushed": rows_flushed,
             "files_written": files_written,
             "total_rows_processed": total_rows_processed,
@@ -249,6 +250,56 @@ class ParquetWriter:
             "rows_written": rows_written,
         }
 
+    def _should_flush_partition(self, partition_key: tuple[int, str]) -> bool:
+        """
+        Determine whether a partition should be flushed based on its buffer size.
+
+        Returns:
+            True if the partition buffer exceeds the configured threshold.
+        """
+        if self.partition_buffer_size == 0:
+            return True
+
+        return (
+            self._partition_buffer_sizes.get(partition_key, 0)
+            >= self.partition_buffer_size
+        )
+
+    def _flush_over_global_limit(self) -> dict[str, int]:
+        """
+        Flush partitions until the global buffer size is back under the cap.
+
+        Returns:
+            Dictionary with write statistics for the forced flushes.
+        """
+        if self.max_total_buffer_size <= 0:
+            return {"files_written": 0, "rows_written": 0}
+
+        if self._total_buffer_bytes <= self.max_total_buffer_size:
+            return {"files_written": 0, "rows_written": 0}
+
+        files_written = 0
+        rows_written = 0
+
+        # Flush largest partitions first to free memory quickly
+        flush_order = sorted(
+            self._partition_buffer_sizes.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+
+        target_bytes = int(self.max_total_buffer_size * 0.8)
+        for partition_key, _ in flush_order:
+            if self._total_buffer_bytes <= target_bytes:
+                break
+
+            ds_id, domain_prefix = partition_key
+            result = self._flush_partition(ds_id, domain_prefix)
+            files_written += result["files_written"]
+            rows_written += result["rows_written"]
+
+        return {"files_written": files_written, "rows_written": rows_written}
+
     def _flush_partition(
         self,
         dataset_id: int,
@@ -272,6 +323,9 @@ class ParquetWriter:
         ):
             return {"files_written": 0, "rows_written": 0}
 
+        partition_bytes = self._partition_buffer_sizes.get(partition_key, 0)
+        partition_rows = self._partition_buffer_rows.get(partition_key, 0)
+
         # Concatenate all buffered DataFrames for this partition
         buffered_dfs = self._partition_buffers[partition_key]
         combined_df = pl.concat(buffered_dfs)
@@ -285,6 +339,10 @@ class ParquetWriter:
         del self._partition_buffer_sizes[partition_key]
         if partition_key in self._partition_buffer_rows:
             del self._partition_buffer_rows[partition_key]
+
+        # Update global buffer counters
+        self._total_buffer_bytes = max(0, self._total_buffer_bytes - partition_bytes)
+        self._total_buffer_rows = max(0, self._total_buffer_rows - partition_rows)
 
         # Update stats
         self._stats["rows_written"] += rows_written
@@ -486,7 +544,6 @@ class ParquetWriter:
             - total_bytes_buffered: Estimated total bytes in buffers
             - partitions: List of buffered partition details
         """
-        total_rows = 0
         partition_details = []
 
         for (dataset_id, domain_prefix), dfs in self._partition_buffers.items():
@@ -494,7 +551,6 @@ class ParquetWriter:
             bytes_buffered = self._partition_buffer_sizes.get(
                 (dataset_id, domain_prefix), 0
             )
-            total_rows += rows
 
             partition_details.append(
                 {
@@ -507,8 +563,8 @@ class ParquetWriter:
 
         return {
             "total_partitions_buffered": len(self._partition_buffers),
-            "total_rows_buffered": total_rows,
-            "total_bytes_buffered": sum(self._partition_buffer_sizes.values()),
+            "total_rows_buffered": self._total_buffer_rows,
+            "total_bytes_buffered": self._total_buffer_bytes,
             "partitions": partition_details,
         }
 
